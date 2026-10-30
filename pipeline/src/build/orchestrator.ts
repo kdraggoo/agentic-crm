@@ -1,34 +1,39 @@
-import { readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { MAX_BUILD_ATTEMPTS, WORKTREES_DIR } from "../config.js";
+import { MAX_BUILD_ATTEMPTS } from "../config.js";
 import { ClaudeTimeoutError } from "../claude.js";
 import type { Spec } from "../po/schema.js";
 import {
-  TestReportSchema,
+  formatDispute,
   runBuildAgent,
-  runTestAgent,
-  type BuildReport,
+  type TestDispute,
   type TestReport,
 } from "./agents.js";
+import { generateRegistry, runChecks } from "./checks.js";
+import { waitForCi } from "./ci.js";
 import {
-  formatCheckResults,
-  generateRegistry,
-  installDependencies,
-  runChecks,
-  type CheckReport,
-} from "./checks.js";
-import {
-  changedPaths,
   commitAll,
-  commitPaths,
-  createWorktree,
-  discardChanges,
-  existingWorktree,
   filesChangedSince,
   headCommit,
   push,
   restorePaths,
 } from "./git.js";
+import {
+  commitMessage,
+  pullRequestBody,
+  type PublishedBuild,
+} from "./report.js";
+import {
+  automaticFlags,
+  diffSince,
+  formatFinding,
+  runReviewer,
+  type ReviewFinding,
+} from "./reviewer.js";
+import {
+  amendTests,
+  existingTests,
+  writeTests,
+  type LockedTests,
+} from "./tests.js";
 
 export interface BuildRequest {
   issueNumber: number;
@@ -43,73 +48,87 @@ export interface BuildRequest {
    * starting over (for retrying the build agent, e.g. with another model).
    */
   reuseTests?: boolean;
+  /** Continue a build that paused on test disputes, with the human's decision. */
+  resume?: { disputes: TestDispute[]; decision: "accepted" | "rejected" };
+  /**
+   * Opens or updates the pull request with this body and returns its URL. When set,
+   * a build is only done once GitHub CI passes on it; without it, CI is skipped.
+   */
+  publish?: (branch: string, body: string) => Promise<string>;
+}
+
+interface Located {
+  branch: string;
+  worktree: string;
+  costUsd: number;
 }
 
 export type BuildOutcome =
-  | {
-      ok: true;
-      branch: string;
-      worktree: string;
-      testReport: TestReport;
-      buildReport: BuildReport;
-      checks: CheckReport;
-      attempts: number;
-      costUsd: number;
-    }
-  | {
-      ok: "tests-only";
-      branch: string;
-      worktree: string;
-      testReport: TestReport;
-      costUsd: number;
-    }
-  | {
-      ok: false;
-      branch: string;
-      worktree: string;
-      reason: string;
-      costUsd: number;
-    };
+  | (Located & PublishedBuild & { ok: true; pullRequestUrl?: string })
+  | (Located & { ok: "tests-only"; testReport: TestReport })
+  | (Located & { ok: "disputed"; disputes: TestDispute[] })
+  | (Located & { ok: false; reason: string });
 
 /**
- * Runs one approved spec through test → build → checks. Every rule the agents are told
- * about is also enforced here: the test agent can only add its test file, the build agent
- * can't change it, and nothing counts as done until the checks pass.
+ * Runs one approved spec through test → build → checks → review → CI. Every rule the
+ * agents are told about is also enforced here: the test agent can only add its test
+ * file, the build agent can't change it, and nothing counts as done until the checks,
+ * the reviewer agent and GitHub CI all pass.
  */
 export async function buildIdea(request: BuildRequest): Promise<BuildOutcome> {
   const { issueNumber, spec, progress } = request;
   let costUsd = 0;
+  let locked: LockedTests;
+  let previousFailure: string | undefined;
 
-  const prepared = request.reuseTests
-    ? await reuseCommittedTests(issueNumber, request.title, progress)
-    : await writeTests(request);
-  const { dir, branch } = prepared;
-  costUsd += prepared.costUsd;
+  if (request.resume) {
+    locked = await existingTests(issueNumber, request.title, {
+      keepWork: true,
+    });
+    if (request.resume.decision === "accepted") {
+      locked = await amendTests(
+        locked,
+        issueNumber,
+        spec,
+        request.resume.disputes,
+        progress,
+      );
+      previousFailure =
+        "A human accepted your test disputes and the test agent corrected those tests in a new commit; read the test file again. Your earlier changes are still in the working tree: continue from them.";
+    } else {
+      previousFailure = [
+        "A human reviewed your test disputes and decided the tests stand as written:",
+        ...request.resume.disputes.map(formatDispute),
+        "Make the app satisfy them without changing behavior the spec doesn't ask for. If that is truly impossible, report status blocked and explain why.",
+      ].join("\n");
+    }
+  } else if (request.reuseTests) {
+    await progress("♻️ Reusing the committed acceptance tests…");
+    locked = await existingTests(issueNumber, request.title, {
+      keepWork: false,
+    });
+  } else {
+    locked = await writeTests(issueNumber, request.title, spec, progress);
+  }
+  costUsd += locked.costUsd;
+  const { dir, branch, testFile, testCommit, testReport } = locked;
+  const at: Located = { branch, worktree: dir, costUsd };
   const fail = (reason: string): BuildOutcome => ({
-    ok: false,
-    branch,
-    worktree: dir,
-    reason,
+    ...at,
     costUsd,
+    ok: false,
+    reason,
   });
-  if (!prepared.ok) return fail(prepared.reason);
-  const { testFile, testCommit, testReport } = prepared;
+
   const covered = testReport.criteria.filter((c) => c.covered).length;
   await progress(
-    `🧪 Tests ${request.reuseTests ? "reused" : "written"}: ${covered}/${spec.acceptance_criteria.length} criteria covered by browser tests.`,
+    `🧪 Tests ready: ${covered}/${spec.acceptance_criteria.length} criteria covered by browser tests.`,
   );
   if (request.testsOnly) {
-    return {
-      ok: "tests-only",
-      branch,
-      worktree: dir,
-      testReport,
-      costUsd,
-    };
+    return { ...at, costUsd, ok: "tests-only", testReport };
   }
 
-  // 2. Build, check, retry with the failure.
-  let previousFailure: string | undefined;
+  let previousFindings: ReviewFinding[] | undefined;
   for (let attempt = 1; attempt <= MAX_BUILD_ATTEMPTS; attempt++) {
     await progress(
       `🔨 Build agent is implementing the spec (attempt ${attempt}/${MAX_BUILD_ATTEMPTS})…`,
@@ -130,17 +149,29 @@ export async function buildIdea(request: BuildRequest): Promise<BuildOutcome> {
       continue;
     }
     costUsd += build.costUsd;
-    if (build.report.status === "blocked") {
+    const report = build.report;
+    if (report.status === "blocked") {
       return fail(
-        `The build agent is blocked: ${build.report.blocked_reason ?? build.report.summary}`,
+        `The build agent is blocked: ${report.blocked_reason ?? report.summary}`,
       );
     }
 
     const changed = await filesChangedSince(dir, testCommit);
     if (changed.includes(testFile)) {
       await restorePaths(dir, testCommit, [testFile]);
-      previousFailure = `You modified the locked test file ${testFile}. It has been restored. Make the implementation satisfy the test as written.`;
-      continue;
+      if (report.status !== "test_dispute") {
+        previousFailure = `You modified the locked test file ${testFile}. It has been restored. Make the implementation satisfy the test as written, or report a test dispute.`;
+        continue;
+      }
+    }
+    if (report.status === "test_dispute" || report.test_disputes.length > 0) {
+      // Pause for a human: the work stays uncommitted in the worktree.
+      return {
+        ...at,
+        costUsd,
+        ok: "disputed",
+        disputes: report.test_disputes,
+      };
     }
     if (
       spec.docs_updates.length > 0 &&
@@ -159,180 +190,73 @@ export async function buildIdea(request: BuildRequest): Promise<BuildOutcome> {
       continue;
     }
 
+    await progress("🧐 Reviewer agent is checking the diff…");
+    const diff = await diffSince(dir, testCommit);
+    const reviewed = await runReviewer(dir, {
+      spec,
+      diff,
+      flags: automaticFlags(diff),
+      buildReport: report,
+      previousFindings,
+    });
+    costUsd += reviewed.costUsd;
+    const blocking = reviewed.review.findings.filter(
+      (finding) => finding.severity === "blocking",
+    );
+    if (blocking.length > 0) {
+      await progress(
+        `🧐 Reviewer requested changes:\n${blocking.map((f) => `- ${f.summary}`).join("\n")}`,
+      );
+      previousFindings = blocking;
+      previousFailure = [
+        "The checks passed, but the reviewer agent found problems you must fix:",
+        ...blocking.map(formatFinding),
+        "If you believe a finding is wrong, keep your code and explain why in reviewer_notes; the reviewer reads your notes on the next review.",
+      ].join("\n");
+      continue;
+    }
+
     await generateRegistry(dir);
-    await commitAll(dir, commitMessage(issueNumber, spec, build.report));
+    await commitAll(dir, commitMessage(issueNumber, spec, report, attempt));
     await push(dir, branch);
-    return {
-      ok: true,
-      branch,
-      worktree: dir,
+    const published: PublishedBuild = {
       testReport,
-      buildReport: build.report,
+      buildReport: report,
       checks,
+      review: {
+        findings: reviewed.review.findings.filter(
+          (finding) => finding.severity === "note",
+        ),
+      },
       attempts: attempt,
       costUsd,
     };
+    if (!request.publish) return { ...at, ...published, costUsd, ok: true };
+
+    const pullRequestUrl = await request.publish(
+      branch,
+      pullRequestBody(issueNumber, spec, published),
+    );
+    await progress(
+      `📬 Pull request: ${pullRequestUrl}\nWaiting for GitHub CI (the full suite, including e2e against Supabase)…`,
+    );
+    const ci = await waitForCi((await headCommit(dir)).sha);
+    if (!ci.passed) {
+      await progress(
+        `❌ GitHub CI failed: ${ci.failures.map((f) => f.name).join(", ")}`,
+      );
+      previousFailure = [
+        "Your change passed the local checks but failed GitHub CI. CI also runs the e2e suite against a real Supabase database, where things that work in the demo can fail (database constraints, values a form sends by default, filters the API can't express).",
+        ...ci.failures.map((f) => `### ${f.name}\n${f.output}`),
+      ].join("\n\n");
+      continue;
+    }
+    const done = { ...published, ci };
+    await request.publish(branch, pullRequestBody(issueNumber, spec, done));
+    return { ...at, ...done, costUsd, ok: true, pullRequestUrl };
   }
 
   return fail(
     `No passing build after ${MAX_BUILD_ATTEMPTS} attempts. Last problem:\n${previousFailure ?? "unknown"}`,
   );
-}
-
-type PreparedTests =
-  | {
-      ok: true;
-      dir: string;
-      branch: string;
-      testFile: string;
-      testCommit: string;
-      testReport: TestReport;
-      costUsd: number;
-    }
-  | { ok: false; dir: string; branch: string; reason: string; costUsd: number };
-
-function testFileFor(issueNumber: number): string {
-  return `e2e/demo/idea-${issueNumber}.spec.ts`;
-}
-
-/** The test report is kept beside the worktree, so a later run can reuse the tests. */
-function testReportPath(issueNumber: number): string {
-  return path.join(WORKTREES_DIR, `idea-${issueNumber}.test-report.json`);
-}
-
-/** Fresh worktree, then the test agent writes the acceptance tests and they are committed. */
-async function writeTests(request: BuildRequest): Promise<PreparedTests> {
-  const { issueNumber, spec, progress } = request;
-  await progress("🌱 Creating a branch and installing dependencies…");
-  const { dir, branch } = await createWorktree(issueNumber, request.title);
-  await installDependencies(dir);
-
-  const testFile = testFileFor(issueNumber);
-  await progress("🧪 Test agent is writing acceptance tests from the spec…");
-  const tests = await runTestAgent(dir, spec, testFile);
-  if (!(await changedPaths(dir)).includes(testFile)) {
-    return {
-      ok: false,
-      dir,
-      branch,
-      reason: `The test agent did not write ${testFile}.`,
-      costUsd: tests.costUsd,
-    };
-  }
-  // Keep only the test file; anything else the test agent touched is discarded.
-  const testPath = path.join(dir, testFile);
-  const testContent = await readFile(testPath, "utf8");
-  await discardChanges(dir);
-  await writeFile(testPath, testContent);
-  const testCommit = await commitPaths(
-    dir,
-    [testFile],
-    `${TEST_COMMIT_PREFIX}${issueNumber}: ${spec.title}`,
-  );
-  await writeFile(
-    testReportPath(issueNumber),
-    JSON.stringify(tests.report, null, 2),
-  );
-  return {
-    ok: true,
-    dir,
-    branch,
-    testFile,
-    testCommit,
-    testReport: tests.report,
-    costUsd: tests.costUsd,
-  };
-}
-
-const TEST_COMMIT_PREFIX = "Add acceptance tests for #";
-
-/** Reopens the worktree at its test commit, dropping any earlier build attempt. */
-async function reuseCommittedTests(
-  issueNumber: number,
-  title: string,
-  progress: BuildRequest["progress"],
-): Promise<PreparedTests> {
-  const { dir, branch } = existingWorktree(issueNumber, title);
-  const head = await headCommit(dir);
-  if (!head.subject.startsWith(`${TEST_COMMIT_PREFIX}${issueNumber}:`)) {
-    return {
-      ok: false,
-      dir,
-      branch,
-      reason: `The worktree's last commit is not the acceptance tests ("${head.subject}"); run without reusing tests.`,
-      costUsd: 0,
-    };
-  }
-  await progress("♻️ Reusing the committed acceptance tests…");
-  await discardChanges(dir);
-  const testReport = TestReportSchema.parse(
-    JSON.parse(await readFile(testReportPath(issueNumber), "utf8")),
-  );
-  return {
-    ok: true,
-    dir,
-    branch,
-    testFile: testFileFor(issueNumber),
-    testCommit: head.sha,
-    testReport,
-    costUsd: 0,
-  };
-}
-
-function commitMessage(
-  issueNumber: number,
-  spec: Spec,
-  report: BuildReport,
-): string {
-  return `Implement #${issueNumber}: ${spec.title}\n\n${report.summary}\n\nCo-Authored-By: Claude <noreply@anthropic.com>`;
-}
-
-export function pullRequestBody(
-  issueNumber: number,
-  spec: Spec,
-  outcome: Extract<BuildOutcome, { ok: true }>,
-): string {
-  const { testReport, buildReport, checks } = outcome;
-  const coverage = testReport.criteria.map((criterion) => {
-    const text = spec.acceptance_criteria[criterion.number - 1] ?? "";
-    const how = criterion.covered
-      ? criterion.tests.map((name) => `\`${name}\``).join("<br>")
-      : `Not a browser test: ${criterion.reason ?? ""}`;
-    return `| ${criterion.number} | ${text.replace(/\|/g, "\\|")} | ${how.replace(/\|/g, "\\|")} |`;
-  });
-  const list = (items: string[]) =>
-    items.length > 0 ? items.map((item) => `- ${item}`).join("\n") : "- None";
-
-  return [
-    `Implements the spec in #${issueNumber}. Built by the agent pipeline: the test agent wrote the acceptance tests from the spec first, then the build agent implemented it without changing them.`,
-    "",
-    "## Summary",
-    buildReport.summary,
-    "",
-    "## Acceptance criteria → tests",
-    `Locked test file: \`${testReport.test_file}\``,
-    "",
-    "| # | Criterion | Covered by |",
-    "|---|---|---|",
-    ...coverage,
-    "",
-    "## Unit tests added",
-    list(buildReport.unit_tests_added),
-    "",
-    "## Docs updated",
-    list(buildReport.docs_updated),
-    "",
-    "## Reviewer notes",
-    list([
-      ...buildReport.reviewer_notes,
-      ...testReport.assumptions.map((a) => `Test assumption: ${a}`),
-    ]),
-    "",
-    "## Pipeline checks",
-    formatCheckResults(checks),
-    "",
-    `Attempts: ${outcome.attempts} · API-equivalent cost: $${outcome.costUsd.toFixed(2)}`,
-    "",
-    "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
-  ].join("\n");
 }

@@ -19,8 +19,10 @@ import {
   type Message,
 } from "discord.js";
 import { requireEnv } from "./config.js";
-import { buildIdea, pullRequestBody } from "./build/orchestrator.js";
+import { formatDispute } from "./build/agents.js";
 import { formatCheckResults } from "./build/checks.js";
+import { formatCiResult } from "./build/ci.js";
+import { buildIdea, type BuildRequest } from "./build/orchestrator.js";
 import {
   IdeaStore,
   latestSpec,
@@ -42,6 +44,10 @@ const REPLY_DEBOUNCE_MS = Number(process.env.REPLY_DEBOUNCE_MS ?? 20_000);
 const APPROVAL_PATTERN = /^(approve|approved|lgtm|ship it|build it)[.!]?$/i;
 const APPROVAL_EMOJI = new Set(["✅", "👍"]);
 
+/** Replies to a paused build's test disputes. */
+const ACCEPT_PATTERN = /^(accept|accepted|agree|fix (the )?tests?)[.!]?$/i;
+const REJECT_PATTERN = /^(reject|rejected|keep (the )?tests?)[.!]?$/i;
+
 /** Statuses from which an approval starts a build. */
 const BUILDABLE: ReadonlySet<IdeaStatus> = new Set([
   "spec-ready",
@@ -54,6 +60,7 @@ const STATUS_TAGS: Record<IdeaStatus, string> = {
   "spec-ready": "Spec ready",
   rejected: "Rejected",
   building: "Building",
+  "test-dispute": "Test dispute",
   "in-review": "In review",
   "build-failed": "Build failed",
 };
@@ -124,6 +131,20 @@ client.on(Events.MessageCreate, (message) => {
     void thread.send(
       `This idea is built and in review: ${idea.pullRequestUrl ?? "see the issue"}. Review and comment on the pull request there.`,
     );
+    return;
+  }
+  if (idea.status === "test-dispute") {
+    const text = message.content.trim();
+    const disputes = idea.disputes ?? [];
+    if (ACCEPT_PATTERN.test(text)) {
+      void startBuild(thread, idea, { disputes, decision: "accepted" });
+    } else if (REJECT_PATTERN.test(text)) {
+      void startBuild(thread, idea, { disputes, decision: "rejected" });
+    } else {
+      void thread.send(
+        "The build is paused on a test dispute. Reply **accept** to have the test agent correct those tests, or **reject** to keep the tests as written.",
+      );
+    }
     return;
   }
   if (
@@ -245,60 +266,49 @@ async function runRound(
   }
 }
 
-function startBuild(thread: AnyThreadChannel, idea: Idea): Promise<void> {
+function startBuild(
+  thread: AnyThreadChannel,
+  idea: Idea,
+  resume?: BuildRequest["resume"],
+): Promise<void> {
   const spec = latestSpec(idea);
   if (!spec) {
     return thread.send("There's no spec to build yet.").then(() => undefined);
   }
   // Mark it immediately so a second approval while queued doesn't start another build.
   idea.status = "building";
+  idea.disputes = undefined;
   const queued = buildQueue.then(async () => {
     try {
       await store.save(idea);
       await applyStatusTag(thread, "building");
       await thread.send(
-        "🚀 Approved. Starting the build; this usually takes 10–30 minutes.",
+        resume
+          ? `▶️ Resuming the build (disputes ${resume.decision}).`
+          : "🚀 Approved. Starting the build; this usually takes 30–60 minutes.",
       );
       const outcome = await buildIdea({
         issueNumber: idea.issueNumber,
         title: idea.title,
         spec,
+        resume,
         progress: async (line) => {
-          await thread.send(line);
+          for (const chunk of chunkForDiscord(line)) await thread.send(chunk);
+        },
+        publish: async (branch, body) => {
+          idea.branch = branch;
+          idea.pullRequestUrl = await store.openPullRequest(
+            branch,
+            `Implement #${idea.issueNumber}: ${spec.title}`,
+            body,
+          );
+          return idea.pullRequestUrl;
         },
       });
       idea.branch = outcome.branch;
-
-      if (outcome.ok === true) {
-        idea.pullRequestUrl = await store.openPullRequest(
-          outcome.branch,
-          `Implement #${idea.issueNumber}: ${spec.title}`,
-          pullRequestBody(idea.issueNumber, spec, outcome),
-        );
-        idea.status = "in-review";
-        const summary = [
-          `✅ Built and checked in ${outcome.attempts} attempt(s). Pull request: ${idea.pullRequestUrl}`,
-          "",
-          outcome.buildReport.summary,
-          "",
-          formatCheckResults(outcome.checks),
-          "",
-          `API-equivalent cost: $${outcome.costUsd.toFixed(2)}`,
-        ].join("\n");
-        for (const chunk of chunkForDiscord(summary)) await thread.send(chunk);
-        await store.save(idea, summary);
-      } else if (outcome.ok === false) {
-        idea.status = "build-failed";
-        const summary = [
-          "❌ The build didn't pass.",
-          "",
-          outcome.reason,
-          "",
-          `Work so far is in the local worktree \`${outcome.worktree}\` (branch \`${outcome.branch}\`). Reply **approve** to try again from scratch, or reply with changes to revise the spec.`,
-        ].join("\n");
-        for (const chunk of chunkForDiscord(summary)) await thread.send(chunk);
-        await store.save(idea, summary);
-      }
+      const summary = await reportOutcome(idea, outcome);
+      for (const chunk of chunkForDiscord(summary)) await thread.send(chunk);
+      await store.save(idea, summary);
       await applyStatusTag(thread, idea.status);
       console.log(`#${idea.issueNumber} → ${idea.status}`);
     } catch (error: unknown) {
@@ -310,6 +320,54 @@ function startBuild(thread: AnyThreadChannel, idea: Idea): Promise<void> {
   });
   buildQueue = queued;
   return queued;
+}
+
+/** Sets the idea's status from a build outcome and returns the message for the thread. */
+async function reportOutcome(
+  idea: Idea,
+  outcome: Awaited<ReturnType<typeof buildIdea>>,
+): Promise<string> {
+  if (outcome.ok === true) {
+    idea.status = "in-review";
+    return [
+      `✅ Built, reviewed and green on CI in ${outcome.attempts} attempt(s). Pull request: ${idea.pullRequestUrl}`,
+      "",
+      outcome.buildReport.summary,
+      "",
+      formatCheckResults(outcome.checks),
+      ...(outcome.ci ? [formatCiResult(outcome.ci)] : []),
+      ...(outcome.review.findings.length > 0
+        ? [
+            "",
+            `Reviewer agent left ${outcome.review.findings.length} note(s) on the PR.`,
+          ]
+        : []),
+      "",
+      `API-equivalent cost: $${outcome.costUsd.toFixed(2)}`,
+    ].join("\n");
+  }
+  if (outcome.ok === "disputed") {
+    idea.status = "test-dispute";
+    idea.disputes = outcome.disputes;
+    return [
+      "⚖️ The build agent says some locked tests are wrong, so it stopped instead of bending the app to fit them:",
+      "",
+      ...outcome.disputes.map(formatDispute),
+      "",
+      "Reply **accept** to have the test agent correct these tests, or **reject** to keep them as written. Either way the build continues from where it stopped.",
+    ].join("\n");
+  }
+  idea.status = "build-failed";
+  if (outcome.ok === false) {
+    return [
+      "❌ The build didn't pass.",
+      "",
+      outcome.reason,
+      "",
+      `Work so far is in the local worktree \`${outcome.worktree}\` (branch \`${outcome.branch}\`). Reply **approve** to try again from scratch, or reply with changes to revise the spec.`,
+    ].join("\n");
+  }
+  return "The build stopped after writing tests only.";
 }
 
 async function applyStatusTag(

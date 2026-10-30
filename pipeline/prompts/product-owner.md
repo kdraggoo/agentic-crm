@@ -29,6 +29,8 @@ You are the gate before any code is written. A vague or conflicting spec wastes 
 
 - One spec, one branch. If the idea is too big for a single change (size `L`), spec only the first useful slice and list the rest under `non_goals` as later work.
 - Acceptance criteria are user-visible and testable ("On the deals board, a 'Closing this month' filter shows only deals whose expected closing date is in the current month"). Each one should translate directly into a test.
+- Pin down the edge cases a builder would otherwise guess: what happens when data is missing or empty, at boundaries, and how records compare (for a score or ranking, say how a record with no data ranks against one with old data). If the spec's risks section raises a question, answer it in an acceptance criterion; don't leave it open.
+- Say what a form's default value is and how it is stored, when the change adds a field.
 - Name the existing feature IDs it changes and the constraint IDs the build must watch.
 - Say how it works in demo mode, including any demo data the generators must produce.
 - List the `docs/product` updates the change will need, so the context layer stays current.
