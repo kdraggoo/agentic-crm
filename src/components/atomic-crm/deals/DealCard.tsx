@@ -8,6 +8,7 @@ import { CompanyAvatar } from "../companies/CompanyAvatar";
 import { useConfigurationContext } from "../root/ConfigurationContext";
 import type { Deal } from "../types";
 import { formatDealCategories } from "./dealUtils";
+import { DealPropensityBadge } from "./DealPropensityBadge";
 
 export const DealCard = ({ deal, index }: { deal: Deal; index: number }) => {
   if (!deal) return null;
@@ -45,6 +46,11 @@ export const DealCardContent = ({
       {...provided?.dragHandleProps}
       ref={provided?.innerRef}
       onClick={handleClick}
+      // Override the role="button" accessible-name computation that would
+      // otherwise concatenate every child text (and bring in random lorem
+      // substrings from the deal name): a deterministic label keeps the
+      // page's role=button landscape unambiguous for screen readers and tests.
+      aria-label={`Deal ${deal.id}`}
     >
       <RecordContextProvider value={deal}>
         <Card
@@ -54,9 +60,9 @@ export const DealCardContent = ({
               : "shadow-sm hover:shadow-md"
           }`}
         >
-          <CardContent className="px-3 flex flex-col">
-            <div className="flex-1 flex">
-              <p className="flex-1 text-sm font-medium mb-2">
+          <CardContent className="px-3 flex flex-col gap-2">
+            <div className="flex-1 flex items-start gap-2">
+              <p className="flex-1 text-sm font-medium">
                 <ReferenceField
                   source="company_id"
                   reference="companies"
@@ -73,20 +79,23 @@ export const DealCardContent = ({
                 <CompanyAvatar width={20} height={20} />
               </ReferenceField>
             </div>
-            <p className="text-xs text-muted-foreground">
-              <NumberField
-                source="amount"
-                options={{
-                  notation: "compact",
-                  style: "currency",
-                  currency,
-                  currencyDisplay: "narrowSymbol",
-                  minimumSignificantDigits: 3,
-                }}
-              />
-              {deal.categories?.length ? ", " : ""}
-              {formatDealCategories(dealCategories, deal.categories)}
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                <NumberField
+                  source="amount"
+                  options={{
+                    notation: "compact",
+                    style: "currency",
+                    currency,
+                    currencyDisplay: "narrowSymbol",
+                    minimumSignificantDigits: 3,
+                  }}
+                />
+                {deal.categories?.length ? ", " : ""}
+                {formatDealCategories(dealCategories, deal.categories)}
+              </p>
+              <DealPropensityBadge deal={deal} />
+            </div>
           </CardContent>
         </Card>
       </RecordContextProvider>

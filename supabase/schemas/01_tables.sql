@@ -76,7 +76,10 @@ create table public.deals (
     archived_at timestamp with time zone,
     expected_closing_date date,
     sales_id bigint,
-    index smallint
+    index smallint,
+    propensity_override text,
+    constraint deals_propensity_override_check
+        check (propensity_override is null or propensity_override in ('low', 'medium', 'high'))
 );
 
 create table public.deal_notes (

@@ -146,11 +146,11 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 ## Deals (DEAL)
 
 ### F-DEAL-01 Deal pipeline Kanban
-- **What:** Desktop-only board with one column per stage, each showing the summed amount; drag cards to reorder within or move across stages (persists `stage` and `index`). Up to 100 unarchived deals. Cards show name, company logo, amount, categories.
-- **Where:** `crm/deals/DealList.tsx`, `DealListContent.tsx` (drag logic, `@hello-pangea/dnd`), `DealColumn.tsx`, `DealCard.tsx`, `stages.ts` (deals with unknown stage go to first column).
-- **Config:** `dealStages`, `currency`.
+- **What:** Desktop-only board with one column per stage, each showing the summed amount; drag cards to reorder within or move across stages (persists `stage` and `index`). Up to 100 unarchived deals. Cards show name, company logo, amount, categories, and a Low/Medium/High propensity-to-buy badge on every active card (F-DEAL-07).
+- **Where:** `crm/deals/DealList.tsx`, `DealListContent.tsx` (drag logic, `@hello-pangea/dnd`), `DealColumn.tsx`, `DealCard.tsx`, `DealPropensityBadge.tsx`, `DealPropensityTooltip.tsx`, `DealPropensityContext.tsx`, `stages.ts` (deals with unknown stage go to first column).
+- **Config:** `dealStages`, `dealPipelineStatuses`, `currency`.
 - **Demo mode:** works.
-- **Related:** F-SET-02, F-SET-03.
+- **Related:** F-SET-02, F-SET-03, F-DEAL-07.
 
 ### F-DEAL-02 Deal search and filters
 - **What:** Always-on search (name, description, and category labels), filters by company and categories (any-of); admins get an account manager picker, non-admins an "Only deals I manage" switch.
@@ -158,8 +158,8 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **Demo mode:** works.
 
 ### F-DEAL-03 Create / edit deal
-- **What:** Modal dialog (routes `/deals/create`, `/deals/:id`): name (required), description, company, contacts (multi), categories (multi), amount, expected closing date (date only), stage. New deals go to the top of their column.
-- **Where:** `crm/deals/DealCreate.tsx`, `DealEdit.tsx`, `DealInputs.tsx`; migrations `20261026120000_deal_categories.sql`, `20260226163952_deals_expected_closing_date_date_only.sql`.
+- **What:** Modal dialog (routes `/deals/create`, `/deals/:id`): name (required), description, company, contacts (multi), categories (multi), amount, expected closing date (date only), stage, and a "Propensity to buy" selector (Auto / Low / Medium / High; Auto = computed, F-DEAL-07). New deals go to the top of their column.
+- **Where:** `crm/deals/DealCreate.tsx`, `DealEdit.tsx`, `DealInputs.tsx`; migrations `20261026120000_deal_categories.sql`, `20260226163952_deals_expected_closing_date_date_only.sql`, `20261030120000_deals_propensity_override.sql`.
 - **Config:** `dealStages`, `dealCategories`.
 - **Demo mode:** works.
 
@@ -175,9 +175,16 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **Demo mode:** works.
 
 ### F-DEAL-06 Deal CSV export
-- **What:** Export button on the deals board (default CSV exporter).
+- **What:** Export button on the deals board (default CSV exporter). The export includes every column of the `deals` table, incl. the `propensity_override` field (F-DEAL-07).
 - **Where:** `crm/deals/DealList.tsx` (`DealActions`).
 - **Demo mode:** works.
+
+### F-DEAL-07 Propensity-to-buy badge and override
+- **What:** Each active deal card on the Kanban (F-DEAL-01) carries a Low/Medium/High propensity badge, computed client-side from a fixed rule-based formula over existing fields (stage position, days since latest activity, deal amount vs. median of active deals, latest deal-note recency, days until expected closing date). Hovering/focusing the badge opens a tooltip naming the top two contributing factors. Archived deals and deals in stages flagged by `dealPipelineStatuses` (default: `won`) show no badge. The deal edit form exposes a "Propensity to buy" selector with options Auto / Low / Medium / High; non-Auto values are stored in `deals.propensity_override` and the badge then shows the chosen bucket with a tooltip that says "Set manually".
+- **Where:** `crm/providers/commons/propensityScoring.ts` (helper + `scoreDeal`), `crm/providers/commons/propensityConstants.ts` (weights, thresholds), `crm/deals/DealCard.tsx`, `DealPropensityBadge.tsx`, `DealPropensityTooltip.tsx`, `DealPropensityContext.tsx` (per-card score lookup, batched signal fetches), `DealListContent.tsx` (provider wrap), `DealInputs.tsx` (override selector); migration `20261030120000_deals_propensity_override.sql` (adds `deals.propensity_override text` with CHECK constraint on `null|low|medium|high`).
+- **Config:** `dealStages`, `dealPipelineStatuses`.
+- **Demo mode:** works (~10% of generated deals are pre-set to a manual override so the override UX is covered without a backend).
+- **Related:** F-DEAL-01, F-DEAL-03, F-DEAL-06, F-IMP-01.
 
 ---
 
@@ -321,11 +328,11 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 ## Import / Export (IMP)
 
 ### F-IMP-01 CSV import (contacts, companies, deals)
-- **What:** "Import CSV" on the contacts, companies and deals pages (and "Import data" with resource picker on the onboarding stepper) opens a dialog with a downloadable sample. Runs in the background in batches with a progress toast and a Stop button. Unknown columns ignored. Contacts: companies and tags matched by name or created. Companies: `name` required, sector matched by value or label. Deals: `name` required, company matched or created, categories (comma/semicolon) and stage matched by value or label. Leading zeros kept in phone/zip/tax columns.
+- **What:** "Import CSV" on the contacts, companies and deals pages (and "Import data" with resource picker on the onboarding stepper) opens a dialog with a downloadable sample. Runs in the background in batches with a progress toast and a Stop button. Unknown columns ignored. Contacts: companies and tags matched by name or created. Companies: `name` required, sector matched by value or label. Deals: `name` required, company matched or created, categories (comma/semicolon) and stage matched by value or label, `propensity_override` accepts Auto/blank, Low, Medium, High (case-insensitive) and rejects any other value with a clear error (F-DEAL-07). Leading zeros kept in phone/zip/tax columns.
 - **Where:** `crm/dataImport/` (`DataImportButton.tsx`, `DataImportDialog.tsx`, `DataImportProvider.tsx`, `DataImportProgressToast.tsx`, `useImportableResources.ts`, `useCompanyImport.ts`, `useDealImport.ts`, `useCompanyResolver.ts`, `parseCell.ts`, `createEachRow.ts`, `companies_sample.csv`, `deals_sample.csv`), `crm/contacts/useContactImport.tsx`, `crm/contacts/contacts_export.csv`, `crm/misc/usePapaParse.tsx`.
 - **Config:** `companySectors`, `dealCategories`, `dealStages`.
 - **Demo mode:** works.
-- **Related:** F-CONT-07, F-DASH-01, F-MOB-01 (mobile offers only registered resources).
+- **Related:** F-CONT-07, F-DASH-01, F-DEAL-07, F-MOB-01 (mobile offers only registered resources).
 
 ### F-IMP-02 JSON migration import
 - **What:** User menu → "Import data" page (`/import`): upload one JSON file with `sales`, `companies`, `contacts`, `notes` (contact notes, with attachment URLs) and `tasks`; tags created from names, sales created as users. Shows per-type progress and errors; sample file downloadable. Desktop only.

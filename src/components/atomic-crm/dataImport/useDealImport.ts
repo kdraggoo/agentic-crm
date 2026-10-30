@@ -9,6 +9,7 @@ import {
   toConfiguredValues,
   toInteger,
   toIsoDate,
+  toPropensityOverride,
   toText,
 } from "./parseCell";
 import type { ImportRow, ProcessImportBatch } from "./types";
@@ -54,25 +55,32 @@ export function useDealImport(): ProcessImportBatch {
       const now = new Date().toISOString();
       return createEachRow(
         rows.map(({ row, companyName, stage }) =>
-          dataProvider.create("deals", {
-            data: {
-              name: toText(row.name),
-              company_id: companyName
-                ? companies.get(companyName)?.id
-                : undefined,
-              contact_ids: [],
-              categories: toConfiguredValues(row.categories, dealCategories),
-              stage,
-              description: toText(row.description),
-              // amount lands in a bigint column, which rejects "4500.50"
-              amount: toInteger(row.amount),
-              expected_closing_date: toIsoDate(row.expected_closing_date),
-              sales_id: identity?.id,
-              index: indexes.get(row) ?? 0,
-              created_at: now,
-              updated_at: now,
-            },
-          }),
+          // Parse propensity_override inside the per-row promise so an invalid
+          // value rejects just this row rather than the whole batch
+          Promise.resolve().then(() =>
+            dataProvider.create("deals", {
+              data: {
+                name: toText(row.name),
+                company_id: companyName
+                  ? companies.get(companyName)?.id
+                  : undefined,
+                contact_ids: [],
+                categories: toConfiguredValues(row.categories, dealCategories),
+                stage,
+                description: toText(row.description),
+                // amount lands in a bigint column, which rejects "4500.50"
+                amount: toInteger(row.amount),
+                expected_closing_date: toIsoDate(row.expected_closing_date),
+                propensity_override: toPropensityOverride(
+                  row.propensity_override,
+                ),
+                sales_id: identity?.id,
+                index: indexes.get(row) ?? 0,
+                created_at: now,
+                updated_at: now,
+              },
+            }),
+          ),
         ),
       );
     },

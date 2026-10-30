@@ -5,9 +5,17 @@ import {
   defaultDealCategories,
   defaultDealStages,
 } from "../../../root/defaultConfiguration";
-import type { Deal } from "../../../types";
+import type { Deal, PropensityBucket } from "../../../types";
 import type { Db } from "./types";
 import { randomDate } from "./utils";
+
+/**
+ * Fraction of generated deals that carry a pre-set `propensity_override`, so
+ * the demo build shows the manual-override UX out of the box. Keeping it low
+ * (~10%) leaves the majority of cards on the computed badge.
+ */
+const OVERRIDE_FRACTION = 0.1;
+const OVERRIDE_BUCKETS: PropensityBucket[] = ["low", "medium", "high"];
 
 export const generateDeals = (db: Db): Deal[] => {
   const deals = Array.from(Array(50).keys()).map((id) => {
@@ -27,6 +35,11 @@ export const generateDeals = (db: Db): Deal[] => {
       .toISOString()
       .split("T")[0];
 
+    const propensity_override =
+      datatype.number({ min: 0, max: 100 }) < OVERRIDE_FRACTION * 100
+        ? random.arrayElement(OVERRIDE_BUCKETS)
+        : null;
+
     return {
       id,
       name: lowercaseName[0].toUpperCase() + lowercaseName.slice(1),
@@ -41,6 +54,7 @@ export const generateDeals = (db: Db): Deal[] => {
       expected_closing_date,
       sales_id: company.sales_id!,
       index: 0,
+      propensity_override,
     };
   });
   // compute index based on stage

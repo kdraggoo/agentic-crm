@@ -59,6 +59,25 @@ const DealLinkedToInputs = () => {
   );
 };
 
+/**
+ * Sentinel used in the form to represent "no override" (= Auto). The database
+ * stores null in `deals.propensity_override` for that case; `parse`/`format`
+ * below bridge the two. A non-empty sentinel keeps Base UI's Select happy
+ * (an empty-string option value is treated as "nothing selected" there).
+ */
+const PROPENSITY_AUTO_VALUE = "auto";
+
+/**
+ * Propensity override options. Low/Medium/High match `deals.propensity_override`
+ * stored values; Auto maps to null on save.
+ */
+const PROPENSITY_OVERRIDE_CHOICES: { id: string; name: string }[] = [
+  { id: PROPENSITY_AUTO_VALUE, name: "crm.propensity.override_options.auto" },
+  { id: "low", name: "crm.propensity.buckets.low" },
+  { id: "medium", name: "crm.propensity.buckets.medium" },
+  { id: "high", name: "crm.propensity.buckets.high" },
+];
+
 const DealMiscInputs = () => {
   const { dealStages, dealCategories } = useConfigurationContext();
   const translate = useTranslate();
@@ -95,6 +114,21 @@ const DealMiscInputs = () => {
         defaultValue="opportunity"
         helperText={false}
         validate={required()}
+      />
+      <SelectInput
+        source="propensity_override"
+        label="resources.deals.fields.propensity_override"
+        choices={PROPENSITY_OVERRIDE_CHOICES}
+        optionText="name"
+        optionValue="id"
+        defaultValue={PROPENSITY_AUTO_VALUE}
+        parse={(value: string) =>
+          value === PROPENSITY_AUTO_VALUE ? null : value
+        }
+        format={(value: string | null | undefined) =>
+          value ?? PROPENSITY_AUTO_VALUE
+        }
+        helperText={false}
       />
     </div>
   );

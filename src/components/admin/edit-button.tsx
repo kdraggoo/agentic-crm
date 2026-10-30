@@ -71,6 +71,7 @@ export const EditButton = (props: EditButtonProps) => {
       className={cn(buttonVariants({ variant: "outline" }))}
       to={link}
       onClick={stopPropagation}
+      role="button"
       aria-label={typeof label === "string" ? label : undefined}
     >
       <Pencil />

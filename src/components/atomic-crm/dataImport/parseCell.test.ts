@@ -6,6 +6,7 @@ import {
   toInteger,
   toIsoDate,
   toNumber,
+  toPropensityOverride,
   toText,
 } from "./parseCell";
 
@@ -111,5 +112,31 @@ describe("toConfiguredValues", () => {
       "opportunity",
     ]);
     expect(toConfiguredValues(null, stages)).toEqual([]);
+  });
+});
+
+describe("toPropensityOverride", () => {
+  it("treats a blank cell as Auto (null)", () => {
+    expect(toPropensityOverride(null)).toBeNull();
+    expect(toPropensityOverride("")).toBeNull();
+    expect(toPropensityOverride("   ")).toBeNull();
+  });
+
+  it("accepts Auto as a synonym for null", () => {
+    expect(toPropensityOverride("Auto")).toBeNull();
+    expect(toPropensityOverride("auto")).toBeNull();
+  });
+
+  it("maps Low / Medium / High to the stored lowercase value, case-insensitively", () => {
+    expect(toPropensityOverride("Low")).toBe("low");
+    expect(toPropensityOverride("MEDIUM")).toBe("medium");
+    expect(toPropensityOverride("high")).toBe("high");
+  });
+
+  it("rejects any other value with a readable error", () => {
+    expect(() => toPropensityOverride("maybe")).toThrow(/propensity_override/i);
+    expect(() => toPropensityOverride("very high")).toThrow(
+      /Auto, Low, Medium, High/,
+    );
   });
 });

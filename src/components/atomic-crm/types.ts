@@ -114,6 +114,13 @@ export type ContactNote = {
   attachments?: AttachmentNote[];
 } & Pick<RaRecord, "id">;
 
+/**
+ * Low/Medium/High propensity-to-buy bucket for a deal. Stored in
+ * `deals.propensity_override` when a sales rep forces a value instead of
+ * trusting the computed one; otherwise null.
+ */
+export type PropensityBucket = "low" | "medium" | "high";
+
 export type Deal = {
   name: string;
   company_id: Identifier;
@@ -128,6 +135,8 @@ export type Deal = {
   expected_closing_date: string;
   sales_id: Identifier;
   index: number;
+  /** `null` or omitted means "Auto" — the computed bucket is shown. */
+  propensity_override?: PropensityBucket | null;
 } & Pick<RaRecord, "id">;
 
 export type DealNote = {
