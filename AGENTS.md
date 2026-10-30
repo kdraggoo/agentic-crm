@@ -109,13 +109,13 @@ The codebase includes mutable dependencies that should be modified directly if n
 #### Configuration via `<CRM>` Component
 
 The `src/App.tsx` file renders the `<CRM>` component, which accepts props for domain-specific configuration:
-- `contactGender`: Gender options
 - `companySectors`: Company industry sectors
 - `dealCategories`, `dealStages`, `dealPipelineStatuses`: Deal configuration
 - `noteStatuses`: Note status options with colors
 - `taskTypes`: Task type options
-- `logo`, `title`: Branding
-- `lightTheme`, `darkTheme`: Theme customization
+- `currency`: Currency used for deal amounts
+- `lightModeLogo`, `darkModeLogo`, `title`: Branding
+- Theme colors come from CSS variables in `src/index.css`; the `lightTheme`/`darkTheme` props mentioned in `CRM.tsx` comments are not used
 - `disableTelemetry`: Opt-out of anonymous usage tracking
 
 #### Database Views
@@ -129,8 +129,12 @@ User data syncs between Supabase's `auth.users` table and the CRM's `sales` tabl
 #### Edge Functions
 
 Located in `supabase/functions/`:
-- User management (creating/updating users, account disabling)
-- Inbound email webhook processing
+- `users`: user management (creating/updating users, account disabling)
+- `update_password`: password reset emails
+- `merge_contacts`: contact merge
+- `delete_note_attachments`: storage cleanup when notes are deleted
+- `postmark`: inbound email webhook processing
+- `mcp`: MCP server for AI assistants
 
 #### Data Providers
 

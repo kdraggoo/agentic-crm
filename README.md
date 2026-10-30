@@ -1,4 +1,12 @@
-# Atomic CRM
+# Agentic CRM
+
+A showcase of an AI agent product pipeline: an idea is submitted, a product-owner agent evaluates it against the product context, build and test agents implement it on a branch, a demo is deployed for review, and it merges only after approval.
+
+The application itself is a copy of [Atomic CRM](https://github.com/marmelab/atomic-crm) by Marmelab (MIT). The agents' source of truth about the product lives in [`docs/product/`](docs/product/README.md). The original Atomic CRM README follows.
+
+---
+
+## Atomic CRM
 
 A full-featured CRM built with React, shadcn-admin-kit, and Supabase.
 
