@@ -8,9 +8,15 @@ import {
   type TestReport,
 } from "./agents.js";
 import { generateRegistry, runChecks } from "./checks.js";
-import { waitForCi } from "./ci.js";
+import {
+  failuresOnlyIn,
+  rerunFailedJobs,
+  waitForCi,
+  type CiResult,
+} from "./ci.js";
 import {
   commitAll,
+  deleteFiles,
   filesChangedSince,
   headCommit,
   push,
@@ -66,7 +72,12 @@ interface Located {
 export type BuildOutcome =
   | (Located & PublishedBuild & { ok: true; pullRequestUrl?: string })
   | (Located & { ok: "tests-only"; testReport: TestReport })
-  | (Located & { ok: "disputed"; disputes: TestDispute[] })
+  | (Located & {
+      ok: "disputed";
+      disputes: TestDispute[];
+      /** Who raised them: the build agent, or the pipeline after CI failed only on them. */
+      raisedBy: "build-agent" | "ci";
+    })
   | (Located & { ok: false; reason: string });
 
 /**
@@ -156,6 +167,12 @@ export async function buildIdea(request: BuildRequest): Promise<BuildOutcome> {
       );
     }
 
+    const deleted = await deleteFiles(dir, report.deleted_files, [testFile]);
+    if (deleted.length > 0) {
+      await progress(
+        `🗑️ Deleted at the build agent's request: ${deleted.join(", ")}`,
+      );
+    }
     const changed = await filesChangedSince(dir, testCommit);
     if (changed.includes(testFile)) {
       await restorePaths(dir, testCommit, [testFile]);
@@ -171,6 +188,7 @@ export async function buildIdea(request: BuildRequest): Promise<BuildOutcome> {
         costUsd,
         ok: "disputed",
         disputes: report.test_disputes,
+        raisedBy: "build-agent",
       };
     }
     if (
@@ -240,7 +258,30 @@ export async function buildIdea(request: BuildRequest): Promise<BuildOutcome> {
     await progress(
       `📬 Pull request: ${pullRequestUrl}\nWaiting for GitHub CI (the full suite, including e2e against Supabase)…`,
     );
-    const ci = await waitForCi((await headCommit(dir)).sha);
+    const sha = (await headCommit(dir)).sha;
+    let ci = await waitForCi(sha);
+    if (!ci.passed) {
+      // Rule out a flaky test or an infrastructure hiccup before blaming the code.
+      await progress(
+        `🔁 GitHub CI failed (${ci.failures.map((f) => f.name).join(", ")}); re-running the failed jobs once…`,
+      );
+      ci = await rerunCi(ci, sha);
+    }
+    const lockedFailures = ci.passed ? null : failuresOnlyIn(ci, testFile);
+    if (lockedFailures) {
+      // The locked tests pass locally but fail twice on CI: a human decides whether
+      // the tests or the app are at fault, instead of spending attempts on it.
+      await progress(
+        "⚖️ CI failed twice, only on locked acceptance tests that pass locally.",
+      );
+      return {
+        ...at,
+        costUsd,
+        ok: "disputed",
+        disputes: lockedFailures.map((test) => ciDispute(test, ci)),
+        raisedBy: "ci",
+      };
+    }
     if (!ci.passed) {
       await progress(
         `❌ GitHub CI failed: ${ci.failures.map((f) => f.name).join(", ")}`,
@@ -259,4 +300,38 @@ export async function buildIdea(request: BuildRequest): Promise<BuildOutcome> {
   return fail(
     `No passing build after ${MAX_BUILD_ATTEMPTS} attempts. Last problem:\n${previousFailure ?? "unknown"}`,
   );
+}
+
+async function rerunCi(failed: CiResult, sha: string): Promise<CiResult> {
+  try {
+    await rerunFailedJobs(failed.failedRunIds);
+  } catch {
+    return failed;
+  }
+  return waitForCi(sha);
+}
+
+const DISPUTE_LOG_LINES = 25;
+
+function ciDispute(test: string, ci: CiResult): TestDispute {
+  const log = ci.failures
+    .map((failure) => failure.output)
+    .join("\n")
+    .split("\n");
+  const at = log.findIndex((line) => line.includes(test));
+  return {
+    test,
+    assumption:
+      "The test passes against the local demo build but failed on GitHub CI twice, so it likely depends on timing: it acts before the page or form has finished loading, or expects state that a slower machine reaches later.",
+    actual:
+      "Every other check passed, including this test locally. It may also be a real app bug that only shows when data loads slowly; reject the dispute if you think so.",
+    evidence: [
+      "GitHub CI log:",
+      "```",
+      ...log.slice(Math.max(0, at), Math.max(0, at) + DISPUTE_LOG_LINES),
+      "```",
+    ].join("\n"),
+    proposed_change:
+      "Make the test robust on a slower machine: before interacting, wait for a sign that the page's data has loaded (a field shows its saved value, a list shows its rows), and don't rely on timing.",
+  };
 }

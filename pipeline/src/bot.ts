@@ -350,7 +350,9 @@ async function reportOutcome(
     idea.status = "test-dispute";
     idea.disputes = outcome.disputes;
     return [
-      "⚖️ The build agent says some locked tests are wrong, so it stopped instead of bending the app to fit them:",
+      outcome.raisedBy === "ci"
+        ? "⚖️ The build passed every local check, but GitHub CI failed twice (the second time on a re-run) only on these locked tests. That usually means the test is timing-sensitive, but it can be an app bug that shows when data loads slowly:"
+        : "⚖️ The build agent says some locked tests are wrong, so it stopped instead of bending the app to fit them:",
       "",
       ...outcome.disputes.map(formatDispute),
       "",

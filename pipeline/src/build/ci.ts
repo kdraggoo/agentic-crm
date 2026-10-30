@@ -8,12 +8,15 @@ export interface CiResult {
   jobs: { name: string; conclusion: string }[];
   /** Failed jobs with the end of their log, for the build agent. */
   failures: { name: string; output: string }[];
+  /** Workflow runs with a failed job, for `rerunFailedJobs`. */
+  failedRunIds: number[];
 }
 
 const POLL_MS = 30_000;
 /** Workflows can register a little apart; wait this long after all runs finish. */
 const SETTLE_MS = 30_000;
 const LOG_LINES = 150;
+const RERUN_START_MS = 120_000;
 
 /**
  * Waits for every GitHub Actions run on a commit to finish and reports the result.
@@ -56,6 +59,7 @@ async function collectResult(
 ): Promise<CiResult> {
   const jobs: CiResult["jobs"] = [];
   const failures: CiResult["failures"] = [];
+  const failedRunIds = new Set<number>();
   for (const run of runs) {
     const { data } = await octokit.actions.listJobsForWorkflowRun({
       ...repo,
@@ -66,6 +70,7 @@ async function collectResult(
       const conclusion = job.conclusion ?? "unknown";
       jobs.push({ name: job.name, conclusion });
       if (conclusion === "failure" || conclusion === "timed_out") {
+        failedRunIds.add(run.id);
         failures.push({
           name: job.name,
           output: await jobLogTail(octokit, repo, job.id),
@@ -73,7 +78,70 @@ async function collectResult(
       }
     }
   }
-  return { passed: failures.length === 0, jobs, failures };
+  return {
+    passed: failures.length === 0,
+    jobs,
+    failures,
+    failedRunIds: [...failedRunIds],
+  };
+}
+
+/**
+ * Re-runs the failed jobs of these workflow runs and returns once GitHub has started
+ * every re-run, so a following `waitForCi` doesn't read the old result.
+ */
+export async function rerunFailedJobs(runIds: number[]): Promise<void> {
+  const octokit = new Octokit({ auth: githubToken() });
+  const repo = githubRepo();
+  const attempts = new Map<number, number>();
+  for (const runId of runIds) {
+    const { data } = await octokit.actions.getWorkflowRun({
+      ...repo,
+      run_id: runId,
+    });
+    attempts.set(runId, data.run_attempt ?? 1);
+    await octokit.actions.reRunWorkflowFailedJobs({ ...repo, run_id: runId });
+  }
+  const deadline = Date.now() + RERUN_START_MS;
+  while (Date.now() < deadline) {
+    const started = await Promise.all(
+      runIds.map(async (runId) => {
+        const { data } = await octokit.actions.getWorkflowRun({
+          ...repo,
+          run_id: runId,
+        });
+        return (data.run_attempt ?? 1) > attempts.get(runId)!;
+      }),
+    );
+    if (started.every(Boolean)) return;
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+  }
+  throw new Error("GitHub did not start the CI re-run within 2 minutes");
+}
+
+/**
+ * The tests that failed on CI when every failed job failed only on tests in one file,
+ * read from the summary Playwright prints at the end ("2 failed" and the test lines
+ * under it); null when a job failed for any other reason.
+ */
+export function failuresOnlyIn(
+  result: CiResult,
+  testFile: string,
+): string[] | null {
+  const failed = new Set<string>();
+  for (const failure of result.failures) {
+    // eslint-disable-next-line no-control-regex
+    const lines = failure.output.replace(/\x1b\[[0-9;]*m/g, "").split("\n");
+    const start = lines.findIndex((line) => /^\s*\d+ failed\s*$/.test(line));
+    if (start === -1) return null;
+    for (const line of lines.slice(start + 1)) {
+      if (!line.includes(" › ")) break;
+      const [, file, ...title] = line.trim().split(" › ");
+      if (!file?.startsWith(`${testFile}:`)) return null;
+      failed.add(title.join(" › "));
+    }
+  }
+  return failed.size > 0 ? [...failed] : null;
 }
 
 async function jobLogTail(

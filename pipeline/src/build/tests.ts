@@ -116,7 +116,7 @@ export async function existingTests(
 
 /**
  * Has the test agent correct the tests a human agreed were wrong. The build agent's
- * unfinished work is parked so the test agent sees the app as it is on the base
+ * work, committed or not, is parked so the test agent sees the app as it is on the base
  * branch, then put back as uncommitted changes on top of the amended tests.
  */
 export async function amendTests(
@@ -128,6 +128,11 @@ export async function amendTests(
 ): Promise<LockedTests> {
   const { dir, testFile } = locked;
   await restorePaths(dir, locked.testCommit, [testFile]);
+  // A dispute raised after CI has implementation commits on top of the tests; fold
+  // them back into the working tree so all the build agent's work is parked together.
+  await runOrThrow("git", ["reset", "--quiet", "--soft", locked.testCommit], {
+    cwd: dir,
+  });
   await park(dir);
   const parked = (
     await runOrThrow("git", ["rev-parse", "HEAD"], { cwd: dir })

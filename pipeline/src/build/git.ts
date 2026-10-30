@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { lstat, rm } from "node:fs/promises";
 import path from "node:path";
 import { REPO_DIR, WORKTREES_DIR } from "../config.js";
 import { run, runOrThrow } from "./run.js";
@@ -184,4 +185,33 @@ export async function unpark(dir: string, parkedSha: string): Promise<void> {
     cwd: dir,
   });
   await runOrThrow("git", ["reset", "--quiet"], { cwd: dir });
+}
+
+/**
+ * Deletes files the build agent asked to remove, since its sandbox can't. Only plain
+ * files inside the worktree qualify (never `.git` or a protected path); returns the
+ * paths actually deleted.
+ */
+export async function deleteFiles(
+  dir: string,
+  files: string[],
+  protectedPaths: string[],
+): Promise<string[]> {
+  const deleted: string[] = [];
+  for (const file of files) {
+    const relative = path.relative(dir, path.resolve(dir, file));
+    if (
+      relative.startsWith("..") ||
+      path.isAbsolute(relative) ||
+      relative.split(path.sep)[0] === ".git" ||
+      protectedPaths.includes(relative)
+    ) {
+      continue;
+    }
+    const stats = await lstat(path.join(dir, relative)).catch(() => null);
+    if (!stats?.isFile() && !stats?.isSymbolicLink()) continue;
+    await rm(path.join(dir, relative));
+    deleted.push(relative);
+  }
+  return deleted;
 }
