@@ -1,0 +1,37 @@
+name: 🤖 Pipeline
+on:
+    push:
+        branches:
+            - main
+        paths:
+            - "pipeline/**"
+            - ".github/workflows/pipeline.yml"
+    pull_request:
+        paths:
+            - "pipeline/**"
+            - ".github/workflows/pipeline.yml"
+
+jobs:
+    typecheck:
+        name: 🏷️ Typecheck pipeline
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        defaults:
+            run:
+                working-directory: pipeline
+        steps:
+            - name: 📥 Checkout repo
+              uses: actions/checkout@v4
+
+            - name: ⚙️ Setup node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+                  cache: npm
+                  cache-dependency-path: pipeline/package-lock.json
+
+            - name: 📥 Download deps
+              run: npm ci
+
+            - name: 🏷️ Typecheck
+              run: npm run typecheck
