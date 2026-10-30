@@ -212,9 +212,11 @@ Function env (`supabase/functions/.env`): `POSTMARK_*`, `VITE_INBOUND_EMAIL`, `S
 
 **E2E** (`playwright.config.ts`, `e2e/`): `make test-e2e` starts an isolated Supabase in `.supabase-e2e/` from `config.e2e.toml` (fresh DB, ports 54341+), app on :5175, opens Playwright UI. Projects `chromium` and `Mobile Chrome` (Pixel 5), `workers: 1`, `baseURL` overridable via `PLAYWRIGHT_BASE_URL`. `e2e/fixtures.ts` wipes tables + auth users with the service role and creates users/sales per test. Needs Docker.
 
+**Demo smoke** (`playwright.demo.config.ts`, `e2e/demo/`): runs against the static demo build, no backend. `webServer` serves `dist/` with `vite preview --config vite.demo.config.ts` on :5176; single `chromium` project, `fullyParallel`. Specs assert structure only (headings, rows, Kanban cards), since demo data is random per load. `playwright.config.ts` ignores `demo/**`. Local run: `npm run build:demo && npx playwright test --config playwright.demo.config.ts`.
+
 **Storybook**: `make storybook` (port 6006); stories render through `StoryWrapper`.
 
-**CI** (`.github/workflows/check.yml`, push to main + PRs, drafts skipped except e2e): `lint` (ESLint + Prettier via lint-action), `typecheck` (`npm run typecheck`), `test-app` (both vitest suites, headless shell), `e2e-test` (`make test-e2e-ci`: built app via `serve` + e2e Supabase), `build` (`npm run build`). No deploy workflow in this repo. Pre-commit (`.husky/pre-commit`): `make registry-gen`, lint-staged (eslint --fix, prettier).
+**CI** (`.github/workflows/check.yml`, push to main + PRs, drafts skipped except e2e): `lint` (ESLint + Prettier via lint-action), `typecheck` (`npm run typecheck`), `test-app` (both vitest suites, headless shell), `e2e-test` (`make test-e2e-ci`: built app via `serve` + e2e Supabase), `demo-smoke` (`npm run build:demo`, then the demo smoke specs against the built output), `build` (`npm run build`). No deploy workflow in this repo. Pre-commit (`.husky/pre-commit`): `make registry-gen`, lint-staged (eslint --fix, prettier).
 
 ## 9. How to add X
 
