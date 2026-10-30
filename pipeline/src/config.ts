@@ -1,7 +1,16 @@
 import "dotenv/config";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import tls from "node:tls";
 import { fileURLToPath } from "node:url";
+
+/**
+ * Optional TLS key-exchange groups, e.g. "X25519:P-256". Some routers and firewalls drop
+ * the larger post-quantum handshake Node 24 sends by default, which shows up as
+ * ERR_SSL_WRONG_VERSION_NUMBER on GitHub calls. Leave unset unless that happens.
+ */
+if (process.env.TLS_ECDH_CURVE)
+  tls.DEFAULT_ECDH_CURVE = process.env.TLS_ECDH_CURVE;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -17,6 +26,44 @@ export const PO_MODEL = process.env.PO_MODEL ?? "opus";
 
 /** Upper bound for one product-owner run. */
 export const PO_TIMEOUT_MS = Number(process.env.PO_TIMEOUT_MS ?? 10 * 60_000);
+
+/** Model for the build agent. */
+export const BUILD_MODEL = process.env.BUILD_MODEL ?? "opus";
+
+/** Model for the test agent. Defaults to the build agent's model. */
+export const TEST_MODEL = process.env.TEST_MODEL ?? BUILD_MODEL;
+
+/** Upper bounds for one test-agent run and one build-agent attempt. */
+export const TEST_TIMEOUT_MS = Number(
+  process.env.TEST_TIMEOUT_MS ?? 30 * 60_000,
+);
+export const BUILD_TIMEOUT_MS = Number(
+  process.env.BUILD_TIMEOUT_MS ?? 45 * 60_000,
+);
+
+/** Build attempts per approval: the first try plus retries with the failing check output. */
+export const MAX_BUILD_ATTEMPTS = Number(process.env.MAX_BUILD_ATTEMPTS ?? 3);
+
+/** Where each idea's git worktree is created. Outside the repo so builds never touch it. */
+export const WORKTREES_DIR = path.resolve(
+  process.env.WORKTREES_DIR ?? path.join(REPO_DIR, "..", "worktrees"),
+);
+
+/**
+ * Directory holding the Node version the app needs (see .nvmrc), put first on PATH for
+ * agents and checks. Defaults to Homebrew's node@24, which is not linked onto PATH.
+ */
+export const NODE_BIN_DIR =
+  process.env.NODE_BIN_DIR ?? "/opt/homebrew/opt/node@24/bin";
+
+/** Environment for build-time commands: the right Node first on PATH, CI-style test runs. */
+export function buildEnv(): NodeJS.ProcessEnv {
+  return {
+    PATH: `${NODE_BIN_DIR}:${process.env.PATH ?? ""}`,
+    // CI mode: Playwright never reuses a stray server and forbids test.only.
+    CI: "1",
+  };
+}
 
 export function requireEnv(name: string): string {
   const value = process.env[name];

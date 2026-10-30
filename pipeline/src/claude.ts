@@ -10,6 +10,13 @@ export interface ClaudeRunOptions<T extends z.ZodTypeAny> {
   model: string;
   /** Built-in tools the agent may use, e.g. ["Read", "Grep", "Glob"]. Empty disables tools. */
   tools: string[];
+  /**
+   * Tool calls that run without a prompt, e.g. ["Edit", "Bash(npm run typecheck)"].
+   * Defaults to `tools`. Anything else is denied, since headless runs cannot ask.
+   */
+  allowedTools?: string[];
+  /** Extra environment variables for the agent and the commands it runs. */
+  env?: NodeJS.ProcessEnv;
   timeoutMs: number;
 }
 
@@ -17,6 +24,14 @@ export interface ClaudeRunResult<T> {
   output: T;
   costUsd: number;
   turns: number;
+}
+
+/** The agent ran past its time limit and was stopped. Anything it changed on disk stays. */
+export class ClaudeTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`claude timed out after ${Math.round(timeoutMs / 60_000)} min`);
+    this.name = "ClaudeTimeoutError";
+  }
 }
 
 /**
@@ -46,18 +61,26 @@ export function runClaude<T extends z.ZodTypeAny>(
     "--setting-sources",
     "project",
   ];
-  if (toolList) args.push("--allowedTools", toolList);
+  const allowed = options.allowedTools ?? options.tools;
+  if (allowed.length > 0) args.push("--allowedTools", ...allowed);
 
   return new Promise((resolve, reject) => {
     const child = spawn("claude", args, {
       cwd: options.cwd,
+      env: { ...process.env, ...options.env },
       stdio: ["pipe", "pipe", "pipe"],
+      // Own process group, so a timeout also stops the test runners and browsers it started.
+      detached: true,
     });
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error(`claude timed out after ${options.timeoutMs} ms`));
+      try {
+        if (child.pid) process.kill(-child.pid, "SIGTERM");
+      } catch {
+        child.kill("SIGTERM");
+      }
+      reject(new ClaudeTimeoutError(options.timeoutMs));
     }, options.timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
