@@ -4,15 +4,13 @@ import { playwright } from "@vitest/browser-playwright";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// Three test projects (https://vitest.dev/guide/projects.html):
+// Two test projects (https://vitest.dev/guide/projects.html):
 //   - "app":       React/DOM unit tests, run in a real browser (Playwright/Chromium).
-//   - "claude":    agent-harness hook tests, plain Node integration tests that spawn
-//                  the .claude/hooks/*.mjs hooks as subprocesses. No DOM, no browser.
 //   - "functions": Supabase Edge Function tests. Written for Deno with JSR imports;
 //                  Node-only here, with the jsr:/npm: specifiers aliased to their
 //                  installed npm equivalents. Aliases are scoped to this project.
-// Run everything with `npm run test:unit:app`, or a single suite with
-// `npm run test:unit:claude` / `npm run test:unit:functions` (neither boots a browser).
+// Run everything with `npm run test:unit:app`, or only the functions suite with
+// `npm run test:unit:functions` (it does not boot a browser).
 export default defineConfig({
   test: {
     projects: [
@@ -74,27 +72,12 @@ export default defineConfig({
             "supabase/**",
             ".supabase-e2e/**",
             "e2e/**/*.spec.{ts,tsx}",
-            // Harness hook tests are Node-only (they import node:fs / node:path
-            // and spawn subprocesses); they run under the "claude" project below.
-            ".claude/**",
           ],
           server: {
             deps: {
               external: [/playwright/],
             },
           },
-        },
-      },
-      {
-        test: {
-          name: "claude",
-          environment: "node",
-          include: [".claude/**/*.test.mjs"],
-          setupFiles: ["./.claude/hooks/test/setup-tmp-root.mjs"],
-          // These tests spawn `node` subprocesses and do real git/worktree work,
-          // so they need more headroom than the default 5s.
-          testTimeout: 30000,
-          hookTimeout: 30000,
         },
       },
       {
