@@ -1,7 +1,16 @@
 import "dotenv/config";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import tls from "node:tls";
 import { fileURLToPath } from "node:url";
+
+/**
+ * Optional TLS key-exchange groups, e.g. "X25519:P-256". Some routers and firewalls drop
+ * the larger post-quantum handshake Node 24 sends by default, which shows up as
+ * ERR_SSL_WRONG_VERSION_NUMBER on GitHub calls. Leave unset unless that happens.
+ */
+if (process.env.TLS_ECDH_CURVE)
+  tls.DEFAULT_ECDH_CURVE = process.env.TLS_ECDH_CURVE;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
