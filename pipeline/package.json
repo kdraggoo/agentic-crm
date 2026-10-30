@@ -1,0 +1,24 @@
+{
+  "name": "agentic-crm-pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent pipeline for Agentic CRM: Discord intake, product-owner agent, GitHub issue state",
+  "type": "module",
+  "scripts": {
+    "po": "tsx src/cli.ts",
+    "bot": "tsx src/bot.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@octokit/rest": "^21.1.1",
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.2",
+    "zod-to-json-schema": "^3.24.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

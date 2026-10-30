@@ -73,5 +73,12 @@ export default tseslint.config(
       "@typescript-eslint/consistent-type-imports": "off",
     },
   },
+  {
+    // The agent pipeline is a Node CLI and bot: logging to stdout is its output.
+    files: ["pipeline/**/*.ts"],
+    rules: {
+      "no-console": "off",
+    },
+  },
   storybook.configs["flat/recommended"],
 );
