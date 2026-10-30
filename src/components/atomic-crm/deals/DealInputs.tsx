@@ -62,7 +62,9 @@ const DealLinkedToInputs = () => {
 /**
  * Sentinel used in the form to represent "no override" (= Auto). The database
  * stores null in `deals.propensity_override` for that case; `parse`/`format`
- * below bridge the two. A non-empty sentinel keeps Base UI's Select happy
+ * below bridge the two. Never use it as a defaultValue: `parse` only runs on
+ * change, so a new deal would be saved with "auto", which the database's
+ * CHECK constraint rejects. `format` already shows Auto for an empty value. A non-empty sentinel keeps Base UI's Select happy
  * (an empty-string option value is treated as "nothing selected" there).
  */
 const PROPENSITY_AUTO_VALUE = "auto";
@@ -121,7 +123,6 @@ const DealMiscInputs = () => {
         choices={PROPENSITY_OVERRIDE_CHOICES}
         optionText="name"
         optionValue="id"
-        defaultValue={PROPENSITY_AUTO_VALUE}
         parse={(value: string) =>
           value === PROPENSITY_AUTO_VALUE ? null : value
         }
