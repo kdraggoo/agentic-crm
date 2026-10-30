@@ -4,7 +4,7 @@ paths: []
 
 # Security Review Triggers
 
-Always dispatch SECURITY-REVIEWER when the diff touches any of:
+Always request a security review of the change when the diff touches any of:
 
 - Authentication or authorization code
 - User input handling (forms, URL params, request body)
@@ -15,5 +15,5 @@ Always dispatch SECURITY-REVIEWER when the diff touches any of:
 - Payment or financial code
 - Supabase RLS policies
 
-When in doubt: dispatch SECURITY-REVIEWER. False positives are cheap,
+When in doubt: request the review. False positives are cheap,
 missed vulnerabilities are not.
