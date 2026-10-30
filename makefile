@@ -168,11 +168,3 @@ update-changelog: ## Update the changelog with the unreleased changes (ran autom
 storybook: ## start storybook
 	npm run storybook
 
-watch: ## live monitor of the most recent agent session (agents, hooks, diagnosis)
-	node scripts/harness-monitor.mjs --watch
-
-monitor: ## one-shot summary of the most recent agent session (pass SESSION=<id> to pick one)
-	@node scripts/harness-monitor.mjs $(if $(SESSION),--session $(SESSION),)
-
-sessions: ## list known agent sessions, newest first
-	@node scripts/harness-monitor.mjs --list

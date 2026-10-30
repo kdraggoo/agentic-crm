@@ -28,7 +28,7 @@ filler tests). Pertinence outranks the percentage.
 
 ## TDD orientation: acceptance-test-driven
 
-- Derive each test from the ticket's `acceptance_criteria`; every test should map to a
+- Derive each test from the spec's acceptance criteria; every test should map to a
   criterion or a user-visible behavior. A test with no traceable criterion is filler.
 - Enforce the OUTCOME (behavior tests present and green), not literal red-green ordering
   (unverifiable when one agent writes both the test and the code).
