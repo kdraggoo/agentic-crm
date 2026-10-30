@@ -1,4 +1,5 @@
 import { Octokit } from "@octokit/rest";
+import type { TestDispute } from "./build/agents.js";
 import { githubRepo, githubToken } from "./config.js";
 import { formatEvaluation } from "./po/format.js";
 import type { PoResult, Spec } from "./po/schema.js";
@@ -15,6 +16,7 @@ export type IdeaStatus =
   | "spec-ready"
   | "rejected"
   | "building"
+  | "test-dispute"
   | "in-review"
   | "build-failed";
 
@@ -29,6 +31,8 @@ export interface Idea {
   branch?: string;
   /** Set once a build has opened a pull request. */
   pullRequestUrl?: string;
+  /** Locked tests the build agent disputed, waiting for the owner's decision. */
+  disputes?: TestDispute[];
 }
 
 const IDEA_LABEL = "idea";
@@ -56,10 +60,15 @@ const STATUS_LABELS: Record<
     color: "1d76db",
     description: "Test and build agents are working on it",
   },
+  "test-dispute": {
+    name: "build:test-dispute",
+    color: "fbca04",
+    description: "Build paused: the build agent disputes a locked test",
+  },
   "in-review": {
     name: "build:in-review",
     color: "0e8a16",
-    description: "Built and checked; pull request open for review",
+    description: "Built, reviewed and CI green; pull request open for review",
   },
   "build-failed": {
     name: "build:failed",
@@ -76,6 +85,7 @@ interface StoredState {
   transcript: Turn[];
   branch?: string;
   pullRequestUrl?: string;
+  disputes?: TestDispute[];
 }
 
 function toState(idea: Idea): StoredState {
@@ -85,6 +95,7 @@ function toState(idea: Idea): StoredState {
     transcript: idea.transcript,
     branch: idea.branch,
     pullRequestUrl: idea.pullRequestUrl,
+    disputes: idea.disputes,
   };
 }
 

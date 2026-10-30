@@ -1,6 +1,6 @@
 # Agent pipeline
 
-The idea pipeline: **Discord intake → product-owner agent → spec → approval → test agent → build agent → checks → pull request**, with each idea's state kept in a GitHub issue.
+The idea pipeline: **Discord intake → product-owner agent → spec → approval → test agent → build agent → checks → reviewer agent → pull request → GitHub CI**, with each idea's state kept in a GitHub issue.
 
 ```
 Discord forum post ──▶ bot.ts
@@ -13,9 +13,14 @@ Discord forum post ──▶ bot.ts
                          orchestrator (src/build/, plain code; one build at a time)
                            1. git worktree on idea/<issue>-<slug> from origin/main
                            2. test agent: acceptance tests from the spec only → committed, locked
-                           3. build agent: implements until the tests pass (up to 3 attempts)
+                           3. build agent: implements until the tests pass
+                                └─ a test it believes is wrong → pause, "Test dispute" in Discord;
+                                   owner replies accept (test agent fixes it) or reject (test stands)
                            4. checks: typecheck · lint · format · unit · demo build · demo e2e
-                           5. push + pull request → "In review" in Discord
+                           5. reviewer agent: reads the diff for bugs, scope creep, test bending
+                           6. push + pull request, then wait for GitHub CI (e2e against Supabase)
+                           7. all green → "In review" in Discord
+                         any failure in 4–6 goes back to the build agent (up to 3 attempts)
 ```
 
 ## How it works
@@ -27,7 +32,10 @@ Discord forum post ──▶ bot.ts
 - **Owner only:** the bot listens only to `DISCORD_OWNER_ID`. Posts become instructions for agents that write code, so nobody else can submit, answer or approve.
 - **Test agent** (`prompts/test-writer.md`): sees the spec and the existing code, never an implementation. Writes `e2e/demo/idea-<issue>.spec.ts` against the static FakeRest demo build, one or more tests per acceptance criterion, and checks they fail for the right reason. The orchestrator keeps only that file and commits it.
 - **Build agent** (`prompts/builder.md`): implements the spec, adds unit tests and updates `docs/product/`. It may edit files and run the project's checks, but has no git access.
-- **Guardrails in code** (`src/build/orchestrator.ts`): if the build agent changes the locked test file, it's restored and the attempt fails. If the spec needs docs updates and none were made, the attempt fails. Nothing counts as done until the full checks pass. Each failure goes back to the build agent with the failing output, up to `MAX_BUILD_ATTEMPTS`.
+- **Guardrails in code** (`src/build/orchestrator.ts`): if the build agent changes the locked test file, it's restored and the attempt fails. If the spec needs docs updates and none were made, the attempt fails. Nothing counts as done until the full checks, the reviewer agent and GitHub CI all pass. Each failure goes back to the build agent with the failing output or findings, up to `MAX_BUILD_ATTEMPTS`.
+- **Test disputes** (`src/build/tests.ts`): the build agent may not bend the app to fit a test. When it believes a locked test is wrong, it reports a dispute with evidence and the build pauses with its work kept. Reply **accept** and the test agent corrects only the disputed tests (committed as "Amend acceptance tests"), or **reject** and the build agent must satisfy them as written. Either reply resumes the build.
+- **Reviewer agent** (`prompts/reviewer.md`, `src/build/reviewer.ts`): after the local checks pass, a separate agent with read-only tools gets the spec and the diff, never the build agent's reasoning, and looks for logic errors, test bending, scope creep, demo-vs-Supabase differences, accessibility regressions and docs drift. Automatic flags (a shared component changed, app code comments that mention tests) point it at known patterns. Blocking findings go back to the build agent; notes go into the pull request.
+- **CI gate** (`src/build/ci.ts`): after pushing, the pipeline opens the pull request and waits for every GitHub Actions run on the commit. CI runs the e2e suite against a real Supabase database, which the local checks can't. A failure goes back to the build agent with the end of the failed job's log.
 - **Isolation:** each idea builds in its own git worktree under `../../worktrees/` (outside the repo), with Node 24 first on `PATH` and `CI=1`, so builds never touch your checkout.
 - **Cost:** runs on your local Claude Code login, so there is no separate API bill on a machine where Claude Code is signed in. The `$` figure the harness prints is the API-equivalent cost Claude Code reports (typically $0.20–$0.55 per round; the first run of a session is higher while the product context is cached). On a subscription it counts toward usage limits rather than being billed.
 
@@ -44,7 +52,7 @@ cp .env.example .env   # then fill in the values
 ### Discord
 
 1. Create a server, then a **Forum** channel named `ideas` (if Forum isn't offered, enable Community in Server Settings).
-2. Add these forum tags, spelled exactly: `Clarifying`, `Spec ready`, `Rejected`, `Building`, `In review`, `Build failed`.
+2. Add these forum tags, spelled exactly: `Clarifying`, `Spec ready`, `Rejected`, `Building`, `Test dispute`, `In review`, `Build failed`.
 3. Turn on Developer Mode (User Settings → Advanced), right-click your own name → Copy User ID, and put it in `.env` as `DISCORD_OWNER_ID`.
 4. At the [Discord Developer Portal](https://discord.com/developers/applications), create an application. On the **Bot** tab, reset the token (put it in `.env` as `DISCORD_TOKEN`) and enable **Message Content Intent**.
 5. Under OAuth2 → URL Generator, select scopes `bot` and `applications.commands`, and permissions View Channels, Send Messages, Send Messages in Threads, Read Message History, Add Reactions, Manage Threads. Open the URL to invite the bot.
@@ -72,12 +80,12 @@ To run the test and build agents on an existing spec without Discord:
 
 ```bash
 npm run build-idea -- 5 --tests-only   # only the test agent; inspect ../../worktrees/idea-5
-npm run build-idea -- 5                # tests + build + checks, then push the branch
-npm run build-idea -- 5 --pr           # same, and open (or update) the pull request
+npm run build-idea -- 5                # tests, build, checks and review, then push the branch
+npm run build-idea -- 5 --pr           # same, then open (or update) the PR and wait for GitHub CI
 npm run build-idea -- 5 --reuse-tests  # keep the tests already committed; only rebuild
 ```
 
-`BUILD_MODEL` and `TEST_MODEL` pick each agent's model (both default to `opus`), e.g. `BUILD_MODEL=sonnet npm run build-idea -- 5 --reuse-tests` to try the build agent on Sonnet against the same tests.
+`BUILD_MODEL`, `TEST_MODEL` and `REVIEW_MODEL` pick each agent's model (all default to `opus`), e.g. `BUILD_MODEL=sonnet npm run build-idea -- 5 --reuse-tests` to try the build agent on Sonnet against the same tests.
 
 ## Samples
 

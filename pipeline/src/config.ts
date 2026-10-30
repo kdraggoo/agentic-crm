@@ -41,6 +41,15 @@ export const BUILD_TIMEOUT_MS = Number(
   process.env.BUILD_TIMEOUT_MS ?? 45 * 60_000,
 );
 
+/** Model and time limit for the reviewer agent that checks each build's diff. */
+export const REVIEW_MODEL = process.env.REVIEW_MODEL ?? "opus";
+export const REVIEW_TIMEOUT_MS = Number(
+  process.env.REVIEW_TIMEOUT_MS ?? 20 * 60_000,
+);
+
+/** How long to wait for GitHub CI on a pushed build before giving up. */
+export const CI_TIMEOUT_MS = Number(process.env.CI_TIMEOUT_MS ?? 30 * 60_000);
+
 /** Build attempts per approval: the first try plus retries with the failing check output. */
 export const MAX_BUILD_ATTEMPTS = Number(process.env.MAX_BUILD_ATTEMPTS ?? 3);
 

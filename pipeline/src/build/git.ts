@@ -141,3 +141,47 @@ export async function push(dir: string, branch: string): Promise<void> {
   );
   if (result.code !== 0) throw new Error(`git push failed:\n${result.output}`);
 }
+
+/** The last commit that touched a path. */
+export async function lastCommitTouching(
+  dir: string,
+  file: string,
+): Promise<{ sha: string; subject: string } | null> {
+  const output = await runOrThrow(
+    "git",
+    ["log", "-1", "--format=%H%n%s", "--", file],
+    { cwd: dir },
+  );
+  const [sha, subject] = output.trim().split("\n");
+  return sha && subject ? { sha, subject } : null;
+}
+
+/**
+ * Parks every uncommitted change in a temporary local commit (hooks skipped, never
+ * pushed) so other work can run on a clean tree. `unpark` puts the changes back.
+ */
+export async function park(dir: string): Promise<void> {
+  await runOrThrow("git", ["add", "-A"], { cwd: dir });
+  await runOrThrow(
+    "git",
+    [
+      ...GIT_AUTHOR,
+      "commit",
+      "--quiet",
+      "--no-verify",
+      "--allow-empty",
+      "-m",
+      "WIP (parked by the pipeline)",
+    ],
+    { cwd: dir },
+  );
+}
+
+/** Undoes a `park` made just before HEAD's current commit, keeping its changes uncommitted. */
+export async function unpark(dir: string, parkedSha: string): Promise<void> {
+  // Re-apply the parked changes on top of whatever is committed now.
+  await runOrThrow("git", ["cherry-pick", "--no-commit", parkedSha], {
+    cwd: dir,
+  });
+  await runOrThrow("git", ["reset", "--quiet"], { cwd: dir });
+}
