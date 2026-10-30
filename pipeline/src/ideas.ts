@@ -1,7 +1,7 @@
 import { Octokit } from "@octokit/rest";
 import { githubRepo, githubToken } from "./config.js";
 import { formatEvaluation } from "./po/format.js";
-import type { PoResult } from "./po/schema.js";
+import type { PoResult, Spec } from "./po/schema.js";
 import type { Turn } from "./po/transcript.js";
 
 /**
@@ -10,7 +10,13 @@ import type { Turn } from "./po/transcript.js";
  * Comments are the human-readable log of each round.
  */
 
-export type IdeaStatus = "clarifying" | "spec-ready" | "rejected";
+export type IdeaStatus =
+  | "clarifying"
+  | "spec-ready"
+  | "rejected"
+  | "building"
+  | "in-review"
+  | "build-failed";
 
 export interface Idea {
   issueNumber: number;
@@ -19,6 +25,10 @@ export interface Idea {
   title: string;
   status: IdeaStatus;
   transcript: Turn[];
+  /** Set once a build has started. */
+  branch?: string;
+  /** Set once a build has opened a pull request. */
+  pullRequestUrl?: string;
 }
 
 const IDEA_LABEL = "idea";
@@ -41,6 +51,21 @@ const STATUS_LABELS: Record<
     color: "b60205",
     description: "Doesn't fit the product",
   },
+  building: {
+    name: "build:in-progress",
+    color: "1d76db",
+    description: "Test and build agents are working on it",
+  },
+  "in-review": {
+    name: "build:in-review",
+    color: "0e8a16",
+    description: "Built and checked; pull request open for review",
+  },
+  "build-failed": {
+    name: "build:failed",
+    color: "d93f0b",
+    description: "The build did not pass its checks",
+  },
 };
 
 const STATE_PATTERN = /<!-- pipeline-state:([A-Za-z0-9+/=]+) -->/;
@@ -49,6 +74,18 @@ interface StoredState {
   threadId: string;
   status: IdeaStatus;
   transcript: Turn[];
+  branch?: string;
+  pullRequestUrl?: string;
+}
+
+function toState(idea: Idea): StoredState {
+  return {
+    threadId: idea.threadId,
+    status: idea.status,
+    transcript: idea.transcript,
+    branch: idea.branch,
+    pullRequestUrl: idea.pullRequestUrl,
+  };
 }
 
 export class IdeaStore {
@@ -96,28 +133,72 @@ export class IdeaStore {
     };
   }
 
-  /** Saves the new state, swaps the status label and logs the round as a comment. */
-  async recordRound(idea: Idea, comment: string): Promise<void> {
-    const state: StoredState = {
-      threadId: idea.threadId,
-      status: idea.status,
-      transcript: idea.transcript,
-    };
+  /** Saves the idea's state, swaps the status label and optionally logs a comment. */
+  async save(idea: Idea, comment?: string): Promise<void> {
     await this.octokit.issues.update({
       ...this.repo,
       issue_number: idea.issueNumber,
-      body: renderBody(state),
+      body: renderBody(toState(idea)),
     });
     await this.octokit.issues.setLabels({
       ...this.repo,
       issue_number: idea.issueNumber,
       labels: [IDEA_LABEL, STATUS_LABELS[idea.status].name],
     });
-    await this.octokit.issues.createComment({
+    if (comment) {
+      await this.octokit.issues.createComment({
+        ...this.repo,
+        issue_number: idea.issueNumber,
+        body: comment,
+      });
+    }
+  }
+
+  /** Opens a pull request for the branch, or updates the open one if a rebuild reused it. */
+  async openPullRequest(
+    branch: string,
+    title: string,
+    body: string,
+  ): Promise<string> {
+    const { data: existing } = await this.octokit.pulls.list({
       ...this.repo,
-      issue_number: idea.issueNumber,
-      body: comment,
+      head: `${this.repo.owner}:${branch}`,
+      state: "open",
     });
+    const open = existing[0];
+    if (open) {
+      await this.octokit.pulls.update({
+        ...this.repo,
+        pull_number: open.number,
+        title,
+        body,
+      });
+      return open.html_url;
+    }
+    const { data } = await this.octokit.pulls.create({
+      ...this.repo,
+      head: branch,
+      base: "main",
+      title,
+      body,
+    });
+    return data.html_url;
+  }
+
+  /** Loads one idea by issue number. */
+  async get(issueNumber: number): Promise<Idea> {
+    const { data: issue } = await this.octokit.issues.get({
+      ...this.repo,
+      issue_number: issueNumber,
+    });
+    const state = parseState(issue.body ?? "");
+    if (!state) throw new Error(`Issue #${issueNumber} is not a pipeline idea`);
+    return {
+      issueNumber: issue.number,
+      issueUrl: issue.html_url,
+      title: issue.title,
+      ...state,
+    };
   }
 
   /** Loads every open idea, keyed by Discord thread ID. */
@@ -151,6 +232,14 @@ export function statusFor(result: PoResult): IdeaStatus {
   return "clarifying";
 }
 
+/** The spec from the product owner's latest evaluation, if it wrote one. */
+export function latestSpec(idea: Idea): Spec | null {
+  const latest = [...idea.transcript]
+    .reverse()
+    .find((turn) => turn.role === "po");
+  return latest?.role === "po" ? latest.result.spec : null;
+}
+
 export function roundComment(result: PoResult, replies: string[]): string {
   const quoted = replies.map((reply) =>
     reply
@@ -175,9 +264,14 @@ function renderBody(state: StoredState): string {
     latest?.role === "po"
       ? `\n\n**Current understanding:** ${latest.result.summary}`
       : "";
+  const links = [
+    state.branch ? `**Branch:** \`${state.branch}\`` : "",
+    state.pullRequestUrl ? `**Pull request:** ${state.pullRequestUrl}` : "",
+  ].filter(Boolean);
   const encoded = Buffer.from(JSON.stringify(state), "utf8").toString("base64");
   return [
     `**Status:** ${STATUS_LABELS[state.status].description}${summary}`,
+    ...(links.length > 0 ? ["", ...links] : []),
     "",
     "## Original idea",
     "",

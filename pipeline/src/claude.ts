@@ -10,6 +10,13 @@ export interface ClaudeRunOptions<T extends z.ZodTypeAny> {
   model: string;
   /** Built-in tools the agent may use, e.g. ["Read", "Grep", "Glob"]. Empty disables tools. */
   tools: string[];
+  /**
+   * Tool calls that run without a prompt, e.g. ["Edit", "Bash(npm run typecheck)"].
+   * Defaults to `tools`. Anything else is denied, since headless runs cannot ask.
+   */
+  allowedTools?: string[];
+  /** Extra environment variables for the agent and the commands it runs. */
+  env?: NodeJS.ProcessEnv;
   timeoutMs: number;
 }
 
@@ -46,11 +53,13 @@ export function runClaude<T extends z.ZodTypeAny>(
     "--setting-sources",
     "project",
   ];
-  if (toolList) args.push("--allowedTools", toolList);
+  const allowed = options.allowedTools ?? options.tools;
+  if (allowed.length > 0) args.push("--allowedTools", ...allowed);
 
   return new Promise((resolve, reject) => {
     const child = spawn("claude", args, {
       cwd: options.cwd,
+      env: { ...process.env, ...options.env },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
