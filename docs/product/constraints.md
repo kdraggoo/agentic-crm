@@ -90,12 +90,13 @@ Rules every change must obey. The product-owner agent rejects or reshapes ideas 
 - **Rule:** Each user-facing feature is fully usable in the demo build (`npm run build:demo`, FakeRest, seeded data, no backend); Supabase-only capabilities (auth admin, inbound email, storage, MCP, edge functions) are exempt only if they degrade gracefully per C-021.
 - **Why:** Idea previews are static demo deploys with no backend.
 - **Evidence:** `docs/product/README.md`, `demo/App.tsx`, `vite.demo.config.ts` (`VITE_IS_DEMO`, placeholder Supabase URL), `src/components/atomic-crm/providers/fakerest/`. Source: project decision.
-- **Check:** Run `npm run dev:demo`, exercise every acceptance criterion; no request goes to `demo.example.org`.
+- **Check:** CI job `demo-smoke` (`.github/workflows/check.yml`) builds the demo and runs `e2e/demo/` against the static output (dashboard, contacts, companies, deals Kanban render with data); a new user-facing feature adds a structural assertion there. Beyond that, run `npm run dev:demo`, exercise every acceptance criterion; no request goes to `demo.example.org`.
 
 ### C-021 Supabase-only capabilities degrade gracefully in demo
 - **Rule:** In demo mode a Supabase-only capability is hidden (feature-flagged on its env var) or stubbed in the FakeRest auth/data provider, and never throws, blanks the page or shows a raw error.
 - **Why:** A broken control on a preview reads as a broken feature.
 - **Evidence:** `src/components/atomic-crm/settings/ProfilePage.tsx` (`VITE_INBOUND_EMAIL` guard), `src/components/atomic-crm/providers/fakerest/authProvider.ts` (stubbed `resetPassword`, `setPassword`, OAuth consent), `src/components/atomic-crm/providers/fakerest/dataProvider.ts` (`salesCreate`, `updatePassword`).
+- **Check:** CI job `demo-smoke` fails if the core pages blank out in the demo build; degradation of a specific capability is checked by hand in `npm run dev:demo`.
 
 ### C-022 Both providers implement the same CrmDataProvider contract
 - **Rule:** Every custom method added to the Supabase provider is also implemented in the FakeRest provider with equivalent observable behavior.
