@@ -126,6 +126,7 @@ export const englishCrmMessages = {
           home: "Home",
           other: "Other",
         },
+        last_name_unknown: "Last name unknown",
       },
       list: {
         error_loading: "Error loading contacts",

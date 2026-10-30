@@ -9,6 +9,7 @@ import {
 import type { FocusEvent, ClipboardEventHandler } from "react";
 import { useFormContext } from "react-hook-form";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { BooleanInput } from "@/components/admin/boolean-input";
 import { ReferenceInput } from "@/components/admin/reference-input";
@@ -54,8 +55,16 @@ export const ContactInputs = () => {
   );
 };
 
+const LNU_VALUE = "LNU";
+
 const ContactIdentityInputs = () => {
   const translate = useTranslate();
+  const { setValue } = useFormContext();
+
+  const handleLastNameUnknown = () => {
+    setValue("last_name", LNU_VALUE, { shouldValidate: true });
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <h6 className="text-lg font-semibold">
@@ -73,7 +82,22 @@ const ContactIdentityInputs = () => {
         defaultValue={contactGender[0].value}
       />
       <TextInput source="first_name" validate={required()} helperText={false} />
-      <TextInput source="last_name" validate={required()} helperText={false} />
+      <div className="flex flex-col gap-1">
+        <TextInput
+          source="last_name"
+          validate={required()}
+          helperText={false}
+        />
+        <Button
+          variant="link"
+          size="sm"
+          type="button"
+          className="self-start p-0 h-auto text-xs"
+          onClick={handleLastNameUnknown}
+        >
+          {translate("resources.contacts.inputs.last_name_unknown")}
+        </Button>
+      </div>
     </div>
   );
 };
@@ -111,16 +135,20 @@ const ContactPersonalInformationInputs = () => {
     },
   ];
 
-  // set first and last name based on email
+  // set first and/or last name based on email when each field is still empty
   const handleEmailChange = (email: string) => {
     const { first_name, last_name } = getValues();
-    if (first_name || last_name || !email) return;
+    if (!email || (first_name && last_name)) return;
     const [first, last] = email.split("@")[0].split(".");
-    setValue("first_name", first.charAt(0).toUpperCase() + first.slice(1));
-    setValue(
-      "last_name",
-      last ? last.charAt(0).toUpperCase() + last.slice(1) : "",
-    );
+    if (!first_name) {
+      setValue("first_name", first.charAt(0).toUpperCase() + first.slice(1));
+    }
+    if (!last_name) {
+      setValue(
+        "last_name",
+        last ? last.charAt(0).toUpperCase() + last.slice(1) : "",
+      );
+    }
   };
 
   const handleEmailPaste: ClipboardEventHandler<

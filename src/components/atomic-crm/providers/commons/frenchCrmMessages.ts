@@ -129,6 +129,7 @@ export const frenchCrmMessages = {
           home: "Perso",
           other: "Autre",
         },
+        last_name_unknown: "Nom de famille inconnu",
       },
       list: {
         error_loading: "Erreur lors du chargement des contacts",

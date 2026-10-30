@@ -38,9 +38,9 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **Demo mode:** works (filters translated by `crm/providers/fakerest/internal/supabaseAdapter.ts`).
 
 ### F-CONT-03 Create / edit contact
-- **What:** Form with pronouns (He/She/They), first/last name (required), title, company (autocomplete with inline create), multiple typed emails and phones (Work/Home/Other), LinkedIn URL (validated), background, newsletter flag, account manager (required, active sales only). Typing/pasting an email pre-fills empty first/last name from `first.last@`.
+- **What:** Form with pronouns (He/She/They), first/last name (required), title, company (autocomplete with inline create), multiple typed emails and phones (Work/Home/Other), LinkedIn URL (validated), background, newsletter flag, account manager (required, active sales only). Typing/pasting an email pre-fills each empty name field independently from `first.last@`. A **'Last name unknown'** shortcut appears directly below the Last name input on all form variants (create, edit, mobile sheets); clicking it fills Last name with the literal value `LNU` and re-runs validation so the required-field error clears immediately. The shortcut does not overwrite a value the user has already typed, and the field remains freely editable after the click. The `LNU` convention stores unknown surnames consistently so they can be found and cleaned up later.
 - **Where:** `crm/contacts/ContactCreate.tsx`, `ContactEdit.tsx`, `ContactInputs.tsx`, `contactModel.ts` (gender list, cleanup), `crm/misc/isLinkedInUrl.ts`; mobile sheets `ContactCreateSheet.tsx`, `ContactEditSheet.tsx`.
-- **Demo mode:** works.
+- **Demo mode:** works; one generated contact has `last_name: 'LNU'` as a live example.
 - **Related:** F-COMP-06, F-CONT-10, F-USER-05.
 
 ### F-CONT-04 Contact detail page

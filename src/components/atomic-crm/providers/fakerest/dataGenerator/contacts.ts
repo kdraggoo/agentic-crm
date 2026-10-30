@@ -33,7 +33,8 @@ export const generateContacts = (db: Db, size = 500): Required<Contact>[] => {
       weightedBoolean(25) && numberOfContacts < nbAvailblePictures;
     const gender = random.arrayElement(contactGender).value;
     const first_name = name.firstName(gender as any);
-    const last_name = name.lastName();
+    // First generated contact always uses LNU so the demo shows the convention
+    const last_name = id === 0 ? "LNU" : name.lastName();
     const email_jsonb = [
       {
         email: internet.email(first_name, last_name),
