@@ -46,11 +46,6 @@ export const DealCardContent = ({
       {...provided?.dragHandleProps}
       ref={provided?.innerRef}
       onClick={handleClick}
-      // Override the role="button" accessible-name computation that would
-      // otherwise concatenate every child text (and bring in random lorem
-      // substrings from the deal name): a deterministic label keeps the
-      // page's role=button landscape unambiguous for screen readers and tests.
-      aria-label={`Deal ${deal.id}`}
     >
       <RecordContextProvider value={deal}>
         <Card

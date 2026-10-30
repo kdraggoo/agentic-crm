@@ -33,6 +33,13 @@ const PIPELINE_STAGE_HEADINGS = [
 /** Stage that is flagged in dealPipelineStatuses as "won" by default. */
 const CLOSED_STAGE_HEADING = "Won";
 
+/** After a save the deal's show dialog opens over the board; close it. */
+async function closeDealDialog(page: Page) {
+  await expect(page).toHaveURL(/#\/deals\/[^/]+\/show/);
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(/#\/deals$/);
+}
+
 async function gotoDealsBoard(page: Page) {
   await page.goto("/");
   await page.getByRole("link", { name: "Deals", exact: true }).click();
@@ -165,14 +172,12 @@ test.describe("propensity-to-buy badge on deal cards", () => {
     await expect(tooltip).toHaveText(/\S{3,}/);
   });
 
-  test("AC4: deal edit form exposes a 'Propensity to buy' selector defaulting to Auto with Low/Medium/High options", async ({
+  test("AC4: the deal form exposes a 'Propensity to buy' selector defaulting to Auto with Low/Medium/High options", async ({
     page,
   }) => {
-    // open the first deal's show modal, then switch to the edit form
-    const firstCard = dealCards(page).first();
-    await firstCard.click();
-
-    await page.getByRole("button", { name: "Edit" }).click();
+    // The create form shows the default: existing demo deals may already
+    // carry a manual override (~10% of generated deals do).
+    await page.goto("/#/deals/create");
     const editDialog = page
       .getByRole("dialog")
       .filter({ hasText: "Linked to" });
@@ -205,7 +210,7 @@ test.describe("propensity-to-buy badge on deal cards", () => {
     expect(draggableId, "card must expose a draggable id").toBeTruthy();
 
     await firstCard.click();
-    await page.getByRole("button", { name: "Edit" }).click();
+    await page.getByRole("link", { name: "Edit", exact: true }).click();
 
     const editDialog = page
       .getByRole("dialog")
@@ -222,8 +227,7 @@ test.describe("propensity-to-buy badge on deal cards", () => {
     await editDialog.getByRole("button", { name: "Save" }).click();
 
     // return to the Kanban board
-    await page.getByRole("link", { name: "Deals", exact: true }).click();
-    await expect(page).toHaveURL(/#\/deals/);
+    await closeDealDialog(page);
     await expect(dealCards(page).first()).toBeVisible();
 
     const card = page.locator(`[data-rfd-draggable-id="${draggableId}"]`);
@@ -240,7 +244,7 @@ test.describe("propensity-to-buy badge on deal cards", () => {
     expect(draggableId).toBeTruthy();
 
     await firstCard.click();
-    await page.getByRole("button", { name: "Edit" }).click();
+    await page.getByRole("link", { name: "Edit", exact: true }).click();
     const editDialog = page
       .getByRole("dialog")
       .filter({ hasText: "Linked to" });
@@ -250,7 +254,7 @@ test.describe("propensity-to-buy badge on deal cards", () => {
     await page.getByRole("option", { name: "Medium", exact: true }).click();
     await editDialog.getByRole("button", { name: "Save" }).click();
 
-    await page.getByRole("link", { name: "Deals", exact: true }).click();
+    await closeDealDialog(page);
     const card = page.locator(`[data-rfd-draggable-id="${draggableId}"]`);
     const badge = card.getByLabel(/^Propensity to buy: Medium$/);
     await expect(badge).toBeVisible();
@@ -270,7 +274,7 @@ test.describe("propensity-to-buy badge on deal cards", () => {
     expect(draggableId).toBeTruthy();
 
     await firstCard.click();
-    await page.getByRole("button", { name: "Edit" }).click();
+    await page.getByRole("link", { name: "Edit", exact: true }).click();
     const openEditDialog = () =>
       page.getByRole("dialog").filter({ hasText: "Linked to" });
     let editDialog = openEditDialog();
@@ -281,13 +285,13 @@ test.describe("propensity-to-buy badge on deal cards", () => {
     await editDialog.getByRole("button", { name: "Save" }).click();
 
     // verify the forced bucket shows up
-    await page.getByRole("link", { name: "Deals", exact: true }).click();
+    await closeDealDialog(page);
     const card = page.locator(`[data-rfd-draggable-id="${draggableId}"]`);
     await expect(card.getByLabel("Propensity to buy: Low")).toBeVisible();
 
     // 2. open the edit form again and switch back to Auto
     await card.click();
-    await page.getByRole("button", { name: "Edit" }).click();
+    await page.getByRole("link", { name: "Edit", exact: true }).click();
     editDialog = openEditDialog();
     const selector = editDialog.getByRole("combobox", {
       name: "Propensity to buy",
@@ -298,7 +302,7 @@ test.describe("propensity-to-buy badge on deal cards", () => {
     await editDialog.getByRole("button", { name: "Save" }).click();
 
     // 3. back on the board, the card tooltip no longer reports a manual override
-    await page.getByRole("link", { name: "Deals", exact: true }).click();
+    await closeDealDialog(page);
     const refreshedCard = page.locator(
       `[data-rfd-draggable-id="${draggableId}"]`,
     );

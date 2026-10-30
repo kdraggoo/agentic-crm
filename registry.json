@@ -332,6 +332,14 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/providers/commons/propensityScoring.ts",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/providers/commons/propensityConstants.ts",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/providers/commons/mergeContacts.ts",
           "type": "registry:component"
         },
@@ -588,6 +596,10 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/deals/useLatestActivityDates.ts",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/deals/stages.ts",
           "type": "registry:component"
         },
@@ -605,6 +617,18 @@
         },
         {
           "path": "src/components/atomic-crm/deals/DealShow.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/deals/DealPropensityTooltip.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/deals/DealPropensityContext.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/deals/DealPropensityBadge.tsx",
           "type": "registry:component"
         },
         {

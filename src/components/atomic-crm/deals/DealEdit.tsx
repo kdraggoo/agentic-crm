@@ -39,11 +39,7 @@ export const DealEdit = ({ open, id }: { open: boolean; id?: string }) => {
             mutationOptions={{
               onSuccess: () => {
                 notify("resources.deals.updated", {});
-                // Return to the Kanban board (not the show modal), so the
-                // overlay does not block subsequent navigation — the test
-                // suite relies on sidebar/header interactions right after a
-                // save, and the user will usually drag the card next anyway.
-                redirect("/deals", undefined, undefined, undefined, {
+                redirect(`/deals/${id}/show`, undefined, undefined, undefined, {
                   _scrollToTop: false,
                 });
               },

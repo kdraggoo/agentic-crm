@@ -1,14 +1,14 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { useGetList } from "ra-core";
 
 import { useConfigurationContext } from "../root/ConfigurationContext";
-import type { ContactNote, Deal, DealNote, Task } from "../types";
+import type { Deal } from "../types";
 import {
   isDealActive,
   medianAmount,
   scoreDeal,
   type PropensityResult,
 } from "../providers/commons/propensityScoring";
+import { useLatestActivityDates } from "./useLatestActivityDates";
 
 /**
  * Data a DealCard needs to render its propensity badge. Computed once from
@@ -65,59 +65,29 @@ export const DealPropensityProvider = ({
     return Array.from(ids);
   }, [activeDeals]);
 
-  // Fetch the latest 250 of each signal source for the active deals. Using
-  // `enabled` so we don't fire pointless requests before deals are loaded.
-  const { data: dealNotes = [] } = useGetList<DealNote>(
-    "deal_notes",
-    {
-      pagination: { page: 1, perPage: 250 },
-      sort: { field: "date", order: "DESC" },
-      filter: dealIds.length ? { "deal_id@in": `(${dealIds.join(",")})` } : {},
-    },
-    { enabled: dealIds.length > 0 },
-  );
-
-  const { data: contactNotes = [] } = useGetList<ContactNote>(
-    "contact_notes",
-    {
-      pagination: { page: 1, perPage: 250 },
-      sort: { field: "date", order: "DESC" },
-      filter: contactIds.length
-        ? { "contact_id@in": `(${contactIds.join(",")})` }
-        : {},
-    },
-    { enabled: contactIds.length > 0 },
-  );
-
-  const { data: tasks = [] } = useGetList<Task>(
-    "tasks",
-    {
-      pagination: { page: 1, perPage: 250 },
-      sort: { field: "created_at", order: "DESC" },
-      filter: contactIds.length
-        ? { "contact_id@in": `(${contactIds.join(",")})` }
-        : {},
-    },
-    { enabled: contactIds.length > 0 },
-  );
+  const latestByDealNote = useLatestActivityDates({
+    resource: "deal_notes",
+    keyField: "deal_id",
+    dateField: "date",
+    ids: dealIds,
+  });
+  const latestByContactNote = useLatestActivityDates({
+    resource: "contact_notes",
+    keyField: "contact_id",
+    dateField: "date",
+    ids: contactIds,
+  });
+  // Tasks use `created_at` as their activity date; `done_date` isn't an event
+  // the way adding a task is.
+  const latestByTask = useLatestActivityDates({
+    resource: "tasks",
+    keyField: "contact_id",
+    dateField: "created_at",
+    ids: contactIds,
+  });
 
   const value = useMemo<DealPropensityContextValue>(() => {
     const median = medianAmount(activeDeals.map((deal) => deal.amount));
-
-    // Pre-index the latest date per deal and per contact so scoring is O(n).
-    const latestByDealNote = latestDateByKey(dealNotes, (note) => note.deal_id);
-    const latestByContactNote = latestDateByKey(
-      contactNotes,
-      (note) => note.contact_id,
-    );
-    const latestByTask = latestDateByKey(
-      tasks,
-      (task) => task.contact_id,
-      (task) =>
-        // tasks use `created_at` as their activity date; `done_date` isn't an
-        // event the way adding a task is
-        task.created_at ?? null,
-    );
 
     const byDealId = new Map<string | number, PropensityResult>();
     for (const deal of activeDeals) {
@@ -147,11 +117,11 @@ export const DealPropensityProvider = ({
     return { byDealId };
   }, [
     activeDeals,
-    contactNotes,
-    dealNotes,
     dealPipelineStatuses,
     dealStages,
-    tasks,
+    latestByContactNote,
+    latestByDealNote,
+    latestByTask,
   ]);
 
   return (
@@ -159,25 +129,6 @@ export const DealPropensityProvider = ({
       {children}
     </DealPropensityContext.Provider>
   );
-};
-
-const latestDateByKey = <T,>(
-  items: readonly T[],
-  key: (item: T) => string | number | undefined,
-  dateOf: (item: T) => string | null | undefined = (item) =>
-    (item as { date?: string | null }).date ?? null,
-): Map<string | number, string> => {
-  const map = new Map<string | number, string>();
-  for (const item of items) {
-    const k = key(item);
-    const date = dateOf(item);
-    if (k == null || !date) continue;
-    const existing = map.get(k);
-    if (!existing || existing < date) {
-      map.set(k, date);
-    }
-  }
-  return map;
 };
 
 const latestFromIds = (

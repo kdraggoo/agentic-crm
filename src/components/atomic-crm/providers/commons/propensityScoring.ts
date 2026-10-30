@@ -9,9 +9,11 @@
  *
  * "Activity" means the single most-recent of: the latest contact note on any
  * linked contact of the deal, the latest deal note, and the latest task on a
- * linked contact — whichever is the newest. If none of those exist, the
- * activity factor contributes zero (not undefined), so the overall score
- * degrades gracefully for an unknown-activity deal rather than throwing.
+ * linked contact — whichever is the newest. A deal with no activity at all
+ * scores zero on the recency factors, exactly like a deal whose last activity
+ * is older than COLD_DAYS: "never touched" must not look better than "gone
+ * quiet". Only intrinsic inputs (stage, amount, closing date) are dropped
+ * when unknown, since a missing value there says nothing about the deal.
  *
  * Rules out of scope on purpose:
  * - Archived deals and deals in a stage flagged `won` or `closed` via
@@ -49,9 +51,9 @@ export interface PropensityResult {
   /** 0..100 raw score for debugging. */
   score: number;
   /**
-   * Contributing factors, sorted strongest-first. Factors that could not be
-   * evaluated (e.g. missing date, no active deals to compute the median) are
-   * excluded from this list; they do not drag the score down with a 0.
+   * Contributing factors, sorted strongest-first. Intrinsic factors that could
+   * not be evaluated (unknown stage, no closing date, no median) are excluded;
+   * the recency factors are always present (zero when there is no activity).
    */
   factors: PropensityFactor[];
 }
@@ -116,22 +118,23 @@ export function scoreDeal(
   );
   if (stageScore !== null) push("stage", stageScore);
 
-  const activity = scoreRecency(context.latestActivityDate, now);
-  if (activity !== null) push("activityRecency", activity);
-
-  const dealNote = scoreRecency(context.latestDealNoteDate, now);
-  if (dealNote !== null) push("dealNoteRecency", dealNote);
-
   const closing = scoreClosing(deal.expected_closing_date, now);
   if (closing !== null) push("closingSoon", closing);
 
   const amount = scoreAmount(deal.amount, context.medianActiveAmount);
   if (amount !== null) push("amount", amount);
 
-  if (factors.length === 0) {
-    // No input could be evaluated — fall back to Medium, as documented.
+  const hasActivity = Boolean(
+    context.latestActivityDate || context.latestDealNoteDate,
+  );
+  if (factors.length === 0 && !hasActivity) {
+    // Nothing at all is known about the deal: fall back to Medium, as documented.
     return { bucket: PROPENSITY_DEFAULT_BUCKET, score: 50, factors: [] };
   }
+
+  // No activity counts as stale (zero), not as unknown.
+  push("activityRecency", scoreRecency(context.latestActivityDate, now) ?? 0);
+  push("dealNoteRecency", scoreRecency(context.latestDealNoteDate, now) ?? 0);
 
   const totalWeight = factors.reduce((sum, f) => sum + f.weight, 0);
   const maxPossible = factors.reduce(

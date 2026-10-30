@@ -129,7 +129,7 @@ describe("scoreDeal", () => {
     expect(result.factors[1]?.key).toBe("activityRecency");
   });
 
-  it("drops a factor when its input is missing instead of counting it as zero", () => {
+  it("counts missing activity as stale (zero) instead of dropping it", () => {
     const result = scoreDeal(
       {
         amount: 50_000,
@@ -143,8 +143,36 @@ describe("scoreDeal", () => {
       },
     );
 
-    expect(result.factors.some((f) => f.key === "activityRecency")).toBe(false);
-    expect(result.factors.some((f) => f.key === "dealNoteRecency")).toBe(false);
+    expect(result.factors.find((f) => f.key === "activityRecency")?.score).toBe(
+      0,
+    );
+    expect(result.factors.find((f) => f.key === "dealNoteRecency")?.score).toBe(
+      0,
+    );
+  });
+
+  it("never rates an untouched deal above the same deal with stale activity", () => {
+    const deal = {
+      amount: 10_000,
+      stage: "proposal-sent",
+      expected_closing_date: daysAhead(60),
+    };
+    const base = {
+      dealStages: stages,
+      closedStages,
+      medianActiveAmount: 10_000,
+      now: NOW,
+    };
+
+    const untouched = scoreDeal(deal, base);
+    const stale = scoreDeal(deal, {
+      ...base,
+      latestActivityDate: daysAgo(PROPENSITY_ACTIVITY_WINDOWS.COLD_DAYS + 1),
+      latestDealNoteDate: daysAgo(PROPENSITY_ACTIVITY_WINDOWS.COLD_DAYS + 1),
+    });
+
+    expect(untouched.score).toBe(stale.score);
+    expect(untouched.bucket).toBe(stale.bucket);
   });
 
   it("has the stage factor dominate when every other signal is neutral", () => {
