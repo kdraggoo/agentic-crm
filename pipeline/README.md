@@ -15,7 +15,7 @@ Discord forum post ──▶ bot.ts
 - **Product-owner agent** (`src/po/`): runs Claude Code headlessly (`claude -p`) with the instructions in [`prompts/product-owner.md`](prompts/product-owner.md), the product context layer from [`docs/product/`](../docs/product/README.md) as its system prompt, and read-only tools (Read, Grep, Glob) over the repo. It returns structured JSON (`src/po/schema.ts`): a classification, related features, constraint findings, and then either questions, a spec, or a rejection.
 - **Stateless rounds:** every evaluation gets the whole conversation so far, so nothing depends on a long-lived session. The transcript is stored in the GitHub issue, which means the bot can restart at any time.
 - **Discord bot** (`src/bot.ts`): a new forum post creates an issue and triggers the first evaluation. Replies in the thread are batched (20 seconds after the last message) and sent back to the agent. The forum tag and the issue label follow the status.
-- **Cost:** runs on your local Claude Code login, so there is no separate API bill on a machine where Claude Code is signed in.
+- **Cost:** runs on your local Claude Code login, so there is no separate API bill on a machine where Claude Code is signed in. The `$` figure the harness prints is the API-equivalent cost Claude Code reports (typically $0.20–$0.55 per round; the first run of a session is higher while the product context is cached). On a subscription it counts toward usage limits rather than being billed.
 
 ## Setup
 
