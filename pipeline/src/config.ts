@@ -35,7 +35,7 @@ export const TEST_MODEL = process.env.TEST_MODEL ?? BUILD_MODEL;
 
 /** Upper bounds for one test-agent run and one build-agent attempt. */
 export const TEST_TIMEOUT_MS = Number(
-  process.env.TEST_TIMEOUT_MS ?? 30 * 60_000,
+  process.env.TEST_TIMEOUT_MS ?? 45 * 60_000,
 );
 export const BUILD_TIMEOUT_MS = Number(
   process.env.BUILD_TIMEOUT_MS ?? 45 * 60_000,
