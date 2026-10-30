@@ -12,6 +12,7 @@ import {
 } from "./agents.js";
 import {
   formatCheckResults,
+  generateRegistry,
   installDependencies,
   runChecks,
   type CheckReport,
@@ -158,6 +159,7 @@ export async function buildIdea(request: BuildRequest): Promise<BuildOutcome> {
       continue;
     }
 
+    await generateRegistry(dir);
     await commitAll(dir, commitMessage(issueNumber, spec, build.report));
     await push(dir, branch);
     return {

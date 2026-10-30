@@ -80,6 +80,21 @@ export async function installDependencies(dir: string): Promise<void> {
   }
 }
 
+/**
+ * Regenerates registry.json, which must list every source file. The pre-commit
+ * hook regenerates it too, but after staging, so the update was left out.
+ */
+export async function generateRegistry(dir: string): Promise<void> {
+  const result = await run("npm", ["run", "registry:gen"], {
+    cwd: dir,
+    env: buildEnv(),
+    timeoutMs: CHECK_TIMEOUT_MS,
+  });
+  if (result.code !== 0) {
+    throw new Error(`registry:gen failed:\n${tail(result.output, 60)}`);
+  }
+}
+
 export function formatCheckResults(report: CheckReport): string {
   return report.results
     .map((result) => `${result.passed ? "✅" : "❌"} ${result.name}`)
