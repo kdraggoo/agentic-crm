@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { MAX_BUILD_ATTEMPTS, WORKTREES_DIR } from "../config.js";
+import { ClaudeTimeoutError } from "../claude.js";
 import type { Spec } from "../po/schema.js";
 import {
   TestReportSchema,
@@ -112,12 +113,21 @@ export async function buildIdea(request: BuildRequest): Promise<BuildOutcome> {
     await progress(
       `🔨 Build agent is implementing the spec (attempt ${attempt}/${MAX_BUILD_ATTEMPTS})…`,
     );
-    const build = await runBuildAgent(dir, {
-      spec,
-      testReport,
-      attempt,
-      previousFailure,
-    });
+    let build: Awaited<ReturnType<typeof runBuildAgent>>;
+    try {
+      build = await runBuildAgent(dir, {
+        spec,
+        testReport,
+        attempt,
+        previousFailure,
+      });
+    } catch (error: unknown) {
+      if (!(error instanceof ClaudeTimeoutError)) throw error;
+      // The work so far stays in the worktree; the next attempt picks it up.
+      await progress(`⏱️ Attempt ${attempt} ran out of time.`);
+      previousFailure = `The previous attempt was stopped after ${Math.round(error.timeoutMs / 60_000)} minutes, before it finished. Its changes are still in the working tree: review them, finish the work, and avoid re-running slow commands (the full e2e suite, repeated demo builds) more than needed.`;
+      continue;
+    }
     costUsd += build.costUsd;
     if (build.report.status === "blocked") {
       return fail(

@@ -119,6 +119,13 @@ client.on(Events.MessageCreate, (message) => {
     );
     return;
   }
+  if (idea.status === "in-review") {
+    // The spec is frozen once a PR exists; re-running the product owner would reopen it.
+    void thread.send(
+      `This idea is built and in review: ${idea.pullRequestUrl ?? "see the issue"}. Review and comment on the pull request there.`,
+    );
+    return;
+  }
   if (
     BUILDABLE.has(idea.status) &&
     APPROVAL_PATTERN.test(message.content.trim())

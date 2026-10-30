@@ -26,6 +26,14 @@ export interface ClaudeRunResult<T> {
   turns: number;
 }
 
+/** The agent ran past its time limit and was stopped. Anything it changed on disk stays. */
+export class ClaudeTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`claude timed out after ${Math.round(timeoutMs / 60_000)} min`);
+    this.name = "ClaudeTimeoutError";
+  }
+}
+
 /**
  * Runs Claude Code headlessly (`claude -p`) with a JSON schema and returns the
  * validated structured output. Uses whatever login the local `claude` CLI has,
@@ -61,12 +69,18 @@ export function runClaude<T extends z.ZodTypeAny>(
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
       stdio: ["pipe", "pipe", "pipe"],
+      // Own process group, so a timeout also stops the test runners and browsers it started.
+      detached: true,
     });
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error(`claude timed out after ${options.timeoutMs} ms`));
+      try {
+        if (child.pid) process.kill(-child.pid, "SIGTERM");
+      } catch {
+        child.kill("SIGTERM");
+      }
+      reject(new ClaudeTimeoutError(options.timeoutMs));
     }, options.timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
