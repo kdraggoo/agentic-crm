@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { WORKTREES_DIR } from "../config.js";
+import { TEST_TIMEOUT_MS, WORKTREES_DIR } from "../config.js";
+import { ClaudeTimeoutError } from "../claude.js";
 import type { Spec } from "../po/schema.js";
 import {
   TestReportSchema,
@@ -60,7 +61,7 @@ export async function writeTests(
 
   const testFile = testFileFor(issueNumber);
   await progress("🧪 Test agent is writing acceptance tests from the spec…");
-  const tests = await runTestAgent(dir, spec, testFile);
+  const tests = await runTestAgentWithRetry(dir, spec, testFile, progress);
   const testCommit = await keepOnlyTestFile(
     dir,
     testFile,
@@ -136,7 +137,13 @@ export async function amendTests(
   });
 
   await progress("🧪 Test agent is correcting the disputed tests…");
-  const tests = await runTestAgent(dir, spec, testFile, disputes);
+  const tests = await runTestAgentWithRetry(
+    dir,
+    spec,
+    testFile,
+    progress,
+    disputes,
+  );
   const testCommit = await keepOnlyTestFile(
     dir,
     testFile,
@@ -153,6 +160,40 @@ export async function amendTests(
     testReport: tests.report,
     costUsd: tests.costUsd,
   };
+}
+
+/**
+ * Runs the test agent, and once more if it runs out of time after drafting the
+ * file: the draft is kept, everything else it touched is reverted, and the second
+ * run is told to finish and report rather than start over.
+ */
+async function runTestAgentWithRetry(
+  dir: string,
+  spec: Spec,
+  testFile: string,
+  progress: Progress,
+  amend?: TestDispute[],
+): Promise<Awaited<ReturnType<typeof runTestAgent>>> {
+  try {
+    return await runTestAgent(dir, spec, testFile, amend);
+  } catch (error: unknown) {
+    if (!(error instanceof ClaudeTimeoutError)) throw error;
+    const testPath = path.join(dir, testFile);
+    const draft = await readFile(testPath, "utf8").catch(() => null);
+    if (draft === null) throw error;
+    await discardChanges(dir);
+    await writeFile(testPath, draft);
+    await progress(
+      "⏱️ The test agent ran out of time; one more run to finish its draft…",
+    );
+    return runTestAgent(
+      dir,
+      spec,
+      testFile,
+      amend,
+      `A previous run drafted \`${testFile}\` but was stopped after ${Math.round(TEST_TIMEOUT_MS / 60_000)} minutes, before it reported. The draft is in the working tree; everything else it changed was reverted. Don't start over: review the draft, fix what's wrong, run it against the demo build once, and report. Keep verification short.`,
+    );
+  }
 }
 
 /** Commits the test file alone; anything else the test agent touched is discarded. */

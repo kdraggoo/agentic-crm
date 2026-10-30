@@ -119,6 +119,8 @@ export async function runTestAgent(
   testFile: string,
   /** Disputes a human accepted: revise the existing tests instead of writing new ones. */
   amend?: TestDispute[],
+  /** Extra instruction, e.g. to finish a draft left by a run that timed out. */
+  note?: string,
 ): Promise<{ report: TestReport; costUsd: number }> {
   const task = amend
     ? [
@@ -129,7 +131,7 @@ export async function runTestAgent(
     : [`Write the acceptance tests for this spec in \`${testFile}\`.`];
   const { output, costUsd } = await runClaude({
     systemPrompt: await prompt("test-writer.md"),
-    prompt: [...task, formatSpec(spec)].join("\n\n"),
+    prompt: [...task, ...(note ? [note] : []), formatSpec(spec)].join("\n\n"),
     schema: TestReportSchema,
     cwd: dir,
     model: TEST_MODEL,
