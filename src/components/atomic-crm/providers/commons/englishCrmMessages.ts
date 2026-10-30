@@ -192,6 +192,7 @@ export const englishCrmMessages = {
         amount: "Budget",
         expected_closing_date: "Expected closing date",
         stage: "Stage",
+        propensity_override: "Propensity to buy",
       },
       action: {
         back_to_deal: "Back to deal",
@@ -599,6 +600,26 @@ export const englishCrmMessages = {
     validation: {
       invalid_url: "Must be a valid URL",
       invalid_linkedin_url: "URL must be from linkedin.com",
+    },
+    propensity: {
+      aria_label: "Propensity to buy: %{bucket}",
+      manual_override: "Set manually",
+      no_factors: "Not enough data yet",
+      buckets: {
+        low: "Low",
+        medium: "Medium",
+        high: "High",
+      },
+      override_options: {
+        auto: "Auto",
+      },
+      factors: {
+        stage: "Advanced stage",
+        activityRecency: "Recent activity",
+        amount: "Large deal size",
+        dealNoteRecency: "Recent deal note",
+        closingSoon: "Closing soon",
+      },
     },
   },
 } as const;

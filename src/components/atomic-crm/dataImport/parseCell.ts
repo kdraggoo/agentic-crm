@@ -79,3 +79,40 @@ export const toConfiguredValues = (
   (toText(cell)?.split(/[,;]/) ?? [])
     .map((entry) => toConfiguredValue(entry, options))
     .filter((value): value is string => value !== undefined);
+
+/**
+ * Error thrown when a cell carries a value that must be strictly one of a
+ * known-good set, and isn't. Keeping it a named class lets the importer
+ * surface the row's error message intact (parseCell is otherwise pure).
+ */
+export class InvalidCellError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidCellError";
+  }
+}
+
+/**
+ * Parses the propensity-override column. Blank means "Auto" (null in the
+ * database); otherwise the cell must be exactly one of Low, Medium or High
+ * (case-insensitive) and anything else is rejected so a typo doesn't silently
+ * clear the override.
+ */
+export const toPropensityOverride = (
+  cell: ImportCell,
+): "low" | "medium" | "high" | null => {
+  const text = toText(cell);
+  if (text === undefined) return null;
+  const normalized = text.toLowerCase();
+  if (normalized === "auto") return null;
+  if (
+    normalized === "low" ||
+    normalized === "medium" ||
+    normalized === "high"
+  ) {
+    return normalized;
+  }
+  throw new InvalidCellError(
+    `Invalid propensity_override value "${text}". Expected one of: Auto, Low, Medium, High.`,
+  );
+};

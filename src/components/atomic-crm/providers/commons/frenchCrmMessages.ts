@@ -196,6 +196,7 @@ export const frenchCrmMessages = {
         amount: "Budget",
         expected_closing_date: "Date de clôture prévue",
         stage: "Étape",
+        propensity_override: "Propension à l'achat",
       },
       action: {
         back_to_deal: "Retour à l'affaire",
@@ -609,6 +610,26 @@ export const frenchCrmMessages = {
     validation: {
       invalid_url: "Doit être une URL valide",
       invalid_linkedin_url: "L'URL doit provenir de linkedin.com",
+    },
+    propensity: {
+      aria_label: "Propension à l'achat : %{bucket}",
+      manual_override: "Défini manuellement",
+      no_factors: "Pas encore assez de données",
+      buckets: {
+        low: "Faible",
+        medium: "Moyenne",
+        high: "Élevée",
+      },
+      override_options: {
+        auto: "Auto",
+      },
+      factors: {
+        stage: "Étape avancée",
+        activityRecency: "Activité récente",
+        amount: "Montant élevé",
+        dealNoteRecency: "Note récente",
+        closingSoon: "Clôture proche",
+      },
     },
   },
 } satisfies CrmMessages;

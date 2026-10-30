@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useConfigurationContext } from "../root/ConfigurationContext";
 import type { Deal } from "../types";
 import { DealColumn } from "./DealColumn";
+import { DealPropensityProvider } from "./DealPropensityContext";
 import type { DealsByStage } from "./stages";
 import { getDealsByStage } from "./stages";
 
@@ -71,17 +72,19 @@ export const DealListContent = () => {
   };
 
   return (
-    <DragDropContext onDragEnd={onDragEnd}>
-      <div className="flex gap-4">
-        {dealStages.map((stage) => (
-          <DealColumn
-            stage={stage.value}
-            deals={dealsByStage[stage.value]}
-            key={stage.value}
-          />
-        ))}
-      </div>
-    </DragDropContext>
+    <DealPropensityProvider deals={unorderedDeals ?? []}>
+      <DragDropContext onDragEnd={onDragEnd}>
+        <div className="flex gap-4">
+          {dealStages.map((stage) => (
+            <DealColumn
+              stage={stage.value}
+              deals={dealsByStage[stage.value]}
+              key={stage.value}
+            />
+          ))}
+        </div>
+      </DragDropContext>
+    </DealPropensityProvider>
   );
 };
 

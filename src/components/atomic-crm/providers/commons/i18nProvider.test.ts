@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { englishCrmMessages } from "./englishCrmMessages";
+import { frenchCrmMessages } from "./frenchCrmMessages";
 import { getInitialLocale, i18nProvider } from "./i18nProvider";
 
 afterEach(() => {
@@ -62,4 +64,53 @@ describe("i18nProvider", () => {
 
     expect(getInitialLocale()).toBe("en");
   });
+
+  it("defines the propensity keys in both english and french catalogs (AC-11)", async () => {
+    const englishKeys = flattenKeys(englishCrmMessages.crm.propensity);
+    const frenchKeys = flattenKeys(frenchCrmMessages.crm.propensity);
+
+    // Both catalogs must carry the same keys under crm.propensity; otherwise
+    // one locale would silently fall back to another and ship the wrong text.
+    expect(frenchKeys).toEqual(englishKeys);
+
+    // And every bucket + factor key must translate to a non-empty string on
+    // both sides. We check French explicitly because English is the source.
+    await i18nProvider.changeLocale("fr");
+    for (const bucket of ["low", "medium", "high"] as const) {
+      expect(
+        i18nProvider.translate(`crm.propensity.buckets.${bucket}`),
+      ).toMatch(/\S/);
+    }
+    for (const factor of [
+      "stage",
+      "activityRecency",
+      "amount",
+      "dealNoteRecency",
+      "closingSoon",
+    ] as const) {
+      expect(
+        i18nProvider.translate(`crm.propensity.factors.${factor}`),
+      ).toMatch(/\S/);
+    }
+    expect(i18nProvider.translate("crm.propensity.manual_override")).toMatch(
+      /\S/,
+    );
+    expect(
+      i18nProvider.translate("crm.propensity.override_options.auto"),
+    ).toMatch(/\S/);
+  });
 });
+
+/** Recursively collect dotted keys from a nested message object. */
+const flattenKeys = (obj: Record<string, unknown>, prefix = ""): string[] => {
+  const out: string[] = [];
+  for (const [key, value] of Object.entries(obj)) {
+    const full = prefix ? `${prefix}.${key}` : key;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      out.push(...flattenKeys(value as Record<string, unknown>, full));
+    } else {
+      out.push(full);
+    }
+  }
+  return out.sort();
+};
