@@ -55,7 +55,8 @@ jobs:
                   --body "🌐 Demo preview: $SITE_URL (updated on every push; it can take a minute after this check finishes)."
 
             - name: 📝 Summary
-              run: echo "🌐 Demo preview: $SITE_URL" >> "$GITHUB_STEP_SUMMARY"
+              run: |
+                  echo "🌐 Demo preview: $SITE_URL" >> "$GITHUB_STEP_SUMMARY"
 
     remove:
         name: 🧹 Remove demo preview
