@@ -3,7 +3,10 @@
  *
  * - A new post in the ideas forum becomes a GitHub issue, and the product-owner agent evaluates it.
  * - Replies in the post's thread go back to the agent, which asks more questions or writes the spec.
- * - Approving a spec ("approve" or a ✅ reaction) runs the test and build agents and opens a PR.
+ * - Approving a spec ("approve" or a ✅ reaction) runs the test and build agents and opens a PR,
+ *   whose demo the preview workflow publishes on GitHub Pages.
+ * - Replies to a built idea are feedback on its demo: the product owner revises the spec, and
+ *   approving it updates the same PR. "merge" squash-merges the PR and closes the idea.
  * - The forum tag and the issue label track where each idea stands.
  * - Only the owner (DISCORD_OWNER_ID) is listened to: posts become instructions for agents that
  *   write code, so nobody else can submit, answer or approve.
@@ -18,14 +21,18 @@ import {
   type ForumChannel,
   type Message,
 } from "discord.js";
-import { requireEnv } from "./config.js";
+import { previewUrl, requireEnv } from "./config.js";
 import { formatDispute } from "./build/agents.js";
 import { formatCheckResults } from "./build/checks.js";
 import { formatCiResult } from "./build/ci.js";
+import { removeWorktree } from "./build/git.js";
 import { buildIdea, type BuildRequest } from "./build/orchestrator.js";
 import {
   IdeaStore,
+  builtVersion,
+  latestPoTurn,
   latestSpec,
+  pullNumberFrom,
   roundComment,
   statusFor,
   type Idea,
@@ -43,6 +50,12 @@ const REPLY_DEBOUNCE_MS = Number(process.env.REPLY_DEBOUNCE_MS ?? 20_000);
 /** Replies that approve a spec for building. */
 const APPROVAL_PATTERN = /^(approve|approved|lgtm|ship it|build it)[.!]?$/i;
 const APPROVAL_EMOJI = new Set(["✅", "👍"]);
+
+/** Replies that merge a built idea's pull request. */
+const MERGE_PATTERN = /^(merge|merge it)[.!]?$/i;
+
+/** How often to look for pull requests merged on GitHub instead of from Discord. */
+const MERGE_SYNC_MS = 10 * 60_000;
 
 /** Replies to a paused build's test disputes. */
 const ACCEPT_PATTERN = /^(accept|accepted|agree|fix (the )?tests?)[.!]?$/i;
@@ -63,10 +76,16 @@ const STATUS_TAGS: Record<IdeaStatus, string> = {
   "test-dispute": "Test dispute",
   "in-review": "In review",
   "build-failed": "Build failed",
+  merged: "Merged",
 };
 
 interface ThreadWork {
-  pendingReplies: { author: string; text: string; at: string }[];
+  pendingReplies: {
+    author: string;
+    text: string;
+    at: string;
+    feedback?: boolean;
+  }[];
   timer?: NodeJS.Timeout;
   running: boolean;
 }
@@ -96,6 +115,8 @@ client.once(Events.ClientReady, async (ready) => {
   console.log(
     `Logged in as ${ready.user.tag}. Watching forum ${FORUM_CHANNEL_ID}; ${ideas.size} open ideas loaded.`,
   );
+  await syncMerged();
+  setInterval(() => void syncMerged(), MERGE_SYNC_MS);
 });
 
 client.on(Events.ThreadCreate, async (thread, newlyCreated) => {
@@ -126,11 +147,17 @@ client.on(Events.MessageCreate, (message) => {
     );
     return;
   }
+  if (
+    MERGE_PATTERN.test(message.content.trim()) &&
+    idea.pullRequestUrl &&
+    idea.status !== "test-dispute"
+  ) {
+    void mergeIdea(thread, idea);
+    return;
+  }
   if (idea.status === "in-review") {
-    // The spec is frozen once a PR exists; re-running the product owner would reopen it.
-    void thread.send(
-      `This idea is built and in review: ${idea.pullRequestUrl ?? "see the issue"}. Review and comment on the pull request there.`,
-    );
+    // Anything else is feedback on the demo: the product owner revises the spec.
+    queueReply(thread, message, { feedback: true });
     return;
   }
   if (idea.status === "test-dispute") {
@@ -195,13 +222,18 @@ async function handleNewIdea(thread: AnyThreadChannel): Promise<void> {
   await runRound(thread, idea, []);
 }
 
-function queueReply(thread: AnyThreadChannel, message: Message): void {
+function queueReply(
+  thread: AnyThreadChannel,
+  message: Message,
+  options: { feedback?: boolean } = {},
+): void {
   const entry = work.get(thread.id) ?? { pendingReplies: [], running: false };
   work.set(thread.id, entry);
   entry.pendingReplies.push({
     author: message.author.username,
     text: message.content,
     at: message.createdAt.toISOString(),
+    ...(options.feedback ? { feedback: true } : {}),
   });
   if (entry.timer) clearTimeout(entry.timer);
   entry.timer = setTimeout(() => void flushReplies(thread), REPLY_DEBOUNCE_MS);
@@ -253,7 +285,9 @@ async function runRound(
       await thread.send(chunk);
     if (idea.status === "spec-ready") {
       await thread.send(
-        "Reply **approve** (or react ✅ to this message) to build it, or reply with changes to revise the spec.",
+        builtVersion(idea) && idea.pullRequestUrl
+          ? `Reply **approve** (or react ✅ to this message) to update ${idea.pullRequestUrl} to this revised spec, reply with more changes, or reply **merge** to merge the current version as it is.`
+          : "Reply **approve** (or react ✅ to this message) to build it, or reply with changes to revise the spec.",
       );
     }
     await store.save(idea, roundComment(result, replies));
@@ -275,6 +309,13 @@ function startBuild(
   if (!spec) {
     return thread.send("There's no spec to build yet.").then(() => undefined);
   }
+  const specTurn = latestPoTurn(idea);
+  // A revised spec for an idea with an open pull request updates that pull request.
+  const built = builtVersion(idea);
+  const revise =
+    !resume && idea.status === "spec-ready" && built && idea.pullRequestUrl
+      ? { previousSpec: built.spec, feedback: built.feedback }
+      : undefined;
   // Mark it immediately so a second approval while queued doesn't start another build.
   idea.status = "building";
   idea.disputes = undefined;
@@ -282,16 +323,24 @@ function startBuild(
     try {
       await store.save(idea);
       await applyStatusTag(thread, "building");
+      const pullRequest =
+        revise && idea.pullRequestUrl
+          ? await store.pullRequest(idea.pullRequestUrl)
+          : undefined;
+      const revising = revise && pullRequest?.open ? revise : undefined;
       await thread.send(
         resume
           ? `▶️ Resuming the build (disputes ${resume.decision}).`
-          : "🚀 Approved. Starting the build; this usually takes 30–60 minutes.",
+          : revising
+            ? "🚀 Approved. Updating the tests and the pull request to the revised spec; this usually takes 30–60 minutes."
+            : "🚀 Approved. Starting the build; this usually takes 30–60 minutes.",
       );
       const outcome = await buildIdea({
         issueNumber: idea.issueNumber,
         title: idea.title,
         spec,
         resume,
+        revise: revising,
         progress: async (line) => {
           for (const chunk of chunkForDiscord(line)) await thread.send(chunk);
         },
@@ -306,6 +355,7 @@ function startBuild(
         },
       });
       idea.branch = outcome.branch;
+      if (outcome.ok === true) idea.builtTurn = specTurn;
       const summary = await reportOutcome(idea, outcome);
       for (const chunk of chunkForDiscord(summary)) await thread.send(chunk);
       await store.save(idea, summary);
@@ -329,8 +379,14 @@ async function reportOutcome(
 ): Promise<string> {
   if (outcome.ok === true) {
     idea.status = "in-review";
+    const demo = idea.pullRequestUrl
+      ? previewUrl(pullNumberFrom(idea.pullRequestUrl))
+      : undefined;
     return [
       `✅ Built, reviewed and green on CI in ${outcome.attempts} attempt(s). Pull request: ${idea.pullRequestUrl}`,
+      ...(demo
+        ? [`🌐 Try it: ${demo} (the demo can take a minute to appear)`]
+        : []),
       "",
       outcome.buildReport.summary,
       "",
@@ -344,6 +400,8 @@ async function reportOutcome(
         : []),
       "",
       `API-equivalent cost: $${outcome.costUsd.toFixed(2)}`,
+      "",
+      "Reply **merge** to merge it, or reply with feedback from the demo to revise it.",
     ].join("\n");
   }
   if (outcome.ok === "disputed") {
@@ -370,6 +428,79 @@ async function reportOutcome(
     ].join("\n");
   }
   return "The build stopped after writing tests only.";
+}
+
+/** Merges a built idea's pull request when every check is green. */
+async function mergeIdea(thread: AnyThreadChannel, idea: Idea): Promise<void> {
+  try {
+    const pull = await store.pullRequest(idea.pullRequestUrl!);
+    if (pull.merged) return await finishMerged(thread, idea, "on GitHub");
+    if (!pull.open) {
+      await thread.send(
+        `${idea.pullRequestUrl} was closed without merging, so there's nothing to merge. Reply **approve** to build it again.`,
+      );
+      return;
+    }
+    if (pull.mergeableState !== "clean") {
+      const why: Record<string, string> = {
+        dirty: "it conflicts with main",
+        behind: "it is behind main",
+        blocked: "a branch rule blocks it",
+        unstable: "some checks aren't green",
+        draft: "it is a draft",
+      };
+      await thread.send(
+        `I can't merge ${idea.pullRequestUrl} yet: ${why[pull.mergeableState] ?? `GitHub reports it as "${pull.mergeableState}"`}. Reply **approve** to rebuild it from the current spec.`,
+      );
+      return;
+    }
+    const spec = latestSpec(idea);
+    await store.merge(
+      pull.number,
+      `Implement #${idea.issueNumber}: ${spec?.title ?? idea.title}`,
+    );
+    await finishMerged(thread, idea, "from Discord");
+  } catch (error: unknown) {
+    await reportError(thread, error);
+  }
+}
+
+/** Closes a merged idea: issue, branch, worktree, tag, and the bot's memory of it. */
+async function finishMerged(
+  thread: AnyThreadChannel,
+  idea: Idea,
+  how: string,
+): Promise<void> {
+  idea.status = "merged";
+  const message = `🎉 ${idea.pullRequestUrl} was merged ${how}. The demo of main updates in a few minutes; this idea is done.`;
+  await store.save(idea, message);
+  await store.close(idea);
+  await removeWorktree(idea.issueNumber, idea.title).catch((error: unknown) =>
+    console.warn(
+      `Could not remove the worktree for #${idea.issueNumber}:`,
+      error,
+    ),
+  );
+  ideas.delete(idea.threadId);
+  await applyStatusTag(thread, "merged");
+  await thread.send(message);
+  console.log(`#${idea.issueNumber} → merged`);
+}
+
+/** Finds pull requests merged on GitHub rather than from Discord, and closes their ideas. */
+async function syncMerged(): Promise<void> {
+  for (const idea of [...ideas.values()]) {
+    if (!idea.pullRequestUrl || idea.status === "building") continue;
+    try {
+      const pull = await store.pullRequest(idea.pullRequestUrl);
+      if (!pull.merged) continue;
+      const thread = await client.channels.fetch(idea.threadId);
+      if (thread?.isThread()) await finishMerged(thread, idea, "on GitHub");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Merge check for #${idea.issueNumber} failed: ${message}`);
+    }
+  }
 }
 
 async function applyStatusTag(

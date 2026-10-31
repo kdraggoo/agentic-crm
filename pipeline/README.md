@@ -1,6 +1,6 @@
 # Agent pipeline
 
-The idea pipeline: **Discord intake → product-owner agent → spec → approval → test agent → build agent → checks → reviewer agent → pull request → GitHub CI**, with each idea's state kept in a GitHub issue.
+The idea pipeline: **Discord intake → product-owner agent → spec → approval → test agent → build agent → checks → reviewer agent → pull request → GitHub CI → live demo → feedback or merge**, with each idea's state kept in a GitHub issue.
 
 ```
 Discord forum post ──▶ bot.ts
@@ -19,8 +19,13 @@ Discord forum post ──▶ bot.ts
                            4. checks: typecheck · lint · format · unit · demo build · demo e2e
                            5. reviewer agent: reads the diff for bugs, scope creep, test bending
                            6. push + pull request, then wait for GitHub CI (e2e against Supabase)
-                           7. all green → "In review" in Discord
+                           7. all green → "In review" in Discord, with the PR's live demo link
                          any failure in 4–6 goes back to the build agent (up to 3 attempts)
+                                                 │
+                         owner tries the demo (GitHub Pages, one per PR)
+                           ├─ replies with feedback → product owner revises the spec → approve
+                           │    → test agent updates the tests → build agent updates the same PR
+                           └─ replies "merge" → squash merge, issue closed, branch and worktree removed
 ```
 
 ## How it works
@@ -36,6 +41,9 @@ Discord forum post ──▶ bot.ts
 - **Test disputes** (`src/build/tests.ts`): the build agent may not bend the app to fit a test. When it believes a locked test is wrong, it reports a dispute with evidence and the build pauses with its work kept. Reply **accept** and the test agent corrects only the disputed tests (committed as "Amend acceptance tests"), or **reject** and the build agent must satisfy them as written. Either reply resumes the build. The build agent can't delete files from its sandbox; it lists them in its report and the pipeline deletes them (never the locked test file or anything outside the worktree).
 - **Reviewer agent** (`prompts/reviewer.md`, `src/build/reviewer.ts`): after the local checks pass, a separate agent with read-only tools gets the spec and the diff, never the build agent's reasoning, and looks for logic errors, test bending, scope creep, demo-vs-Supabase differences, accessibility regressions and docs drift. Automatic flags (a shared component changed, app code comments that mention tests) point it at known patterns. Blocking findings go back to the build agent; notes go into the pull request.
 - **CI gate** (`src/build/ci.ts`): after pushing, the pipeline opens the pull request and waits for every GitHub Actions run on the commit. CI runs the e2e suite against a real Supabase database, which the local checks can't. A failed run is first re-run once (failed jobs only), which rules out flaky tests and infrastructure hiccups such as Docker Hub rate limits. A failure that persists goes back to the build agent with the end of the failed job's log, unless it is only in the locked acceptance tests, which already passed locally: then the build pauses as a test dispute raised by CI, so a human decides whether the test or the app is at fault.
+- **Live demo per pull request** (`.github/workflows/preview.yml`, `scripts/publish-preview.sh`): every push to a pull request builds the FakeRest demo and publishes it to the `gh-pages` branch under `pr-<number>/`, so it is served at `https://<owner>.github.io/<repo>/pr-<number>/`; main is published at the site root. Closing the pull request removes its folder. The branch is kept to a single commit. The workflow is part of CI, so a build is only "In review" once its demo is published.
+- **Feedback loop:** in an "In review" thread, any reply other than `merge` is feedback on the demo. The product-owner agent revises the spec with it; approving the revision has the test agent update the locked tests (committed as "Amend acceptance tests") and the build agent update its implementation, on the same branch and pull request.
+- **Merge on approval:** reply `merge` and the bot squash-merges the pull request, if GitHub reports it mergeable with every check green, then closes the issue, deletes the branch and removes the local worktree. Pull requests merged on GitHub directly are picked up at startup and every 10 minutes.
 - **Isolation:** each idea builds in its own git worktree under `../../worktrees/` (outside the repo), with Node 24 first on `PATH` and `CI=1`, so builds never touch your checkout.
 - **Cost:** runs on your local Claude Code login, so there is no separate API bill on a machine where Claude Code is signed in. The `$` figure the harness prints is the API-equivalent cost Claude Code reports (typically $0.20–$0.55 per round; the first run of a session is higher while the product context is cached). On a subscription it counts toward usage limits rather than being billed.
 
@@ -49,10 +57,14 @@ npm install
 cp .env.example .env   # then fill in the values
 ```
 
+### GitHub Pages
+
+The preview workflow creates the `gh-pages` branch on its first run. Then, in the repository's Settings → Pages, set the source to **Deploy from a branch**, `gh-pages`, `/ (root)`. Pages is free for public repositories.
+
 ### Discord
 
 1. Create a server, then a **Forum** channel named `ideas` (if Forum isn't offered, enable Community in Server Settings).
-2. Add these forum tags, spelled exactly: `Clarifying`, `Spec ready`, `Rejected`, `Building`, `Test dispute`, `In review`, `Build failed`.
+2. Add these forum tags, spelled exactly: `Clarifying`, `Spec ready`, `Rejected`, `Building`, `Test dispute`, `In review`, `Build failed`, `Merged`.
 3. Turn on Developer Mode (User Settings → Advanced), right-click your own name → Copy User ID, and put it in `.env` as `DISCORD_OWNER_ID`.
 4. At the [Discord Developer Portal](https://discord.com/developers/applications), create an application. On the **Bot** tab, reset the token (put it in `.env` as `DISCORD_TOKEN`) and enable **Message Content Intent**.
 5. Under OAuth2 → URL Generator, select scopes `bot` and `applications.commands`, and permissions View Channels, Send Messages, Send Messages in Threads, Read Message History, Add Reactions, Manage Threads. Open the URL to invite the bot.
@@ -90,7 +102,3 @@ npm run build-idea -- 5 --reuse-tests  # keep the tests already committed; only 
 ## Samples
 
 `samples/` holds ideas chosen to exercise each outcome: an iteration of an existing feature (`deal-closing-filter`), a new feature (`email-sequences`), a constraint conflict (`delete-users`), an out-of-scope vertical feature (`vet-appointments`), and a vague request (`better-dashboard`).
-
-## Next phases
-
-A live demo deploy per pull request, the iteration loop from demo feedback, and merge on approval.

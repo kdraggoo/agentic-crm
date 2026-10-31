@@ -18,7 +18,8 @@ export type IdeaStatus =
   | "building"
   | "test-dispute"
   | "in-review"
-  | "build-failed";
+  | "build-failed"
+  | "merged";
 
 export interface Idea {
   issueNumber: number;
@@ -33,6 +34,16 @@ export interface Idea {
   pullRequestUrl?: string;
   /** Locked tests the build agent disputed, waiting for the owner's decision. */
   disputes?: TestDispute[];
+  /** Transcript index of the product-owner turn whose spec the pull request implements. */
+  builtTurn?: number;
+}
+
+export interface PullRequestState {
+  number: number;
+  open: boolean;
+  merged: boolean;
+  /** GitHub's mergeable_state: "clean" means mergeable with every check green. */
+  mergeableState: string;
 }
 
 const IDEA_LABEL = "idea";
@@ -75,6 +86,11 @@ const STATUS_LABELS: Record<
     color: "d93f0b",
     description: "The build did not pass its checks",
   },
+  merged: {
+    name: "build:merged",
+    color: "6f42c1",
+    description: "Merged into main",
+  },
 };
 
 const STATE_PATTERN = /<!-- pipeline-state:([A-Za-z0-9+/=]+) -->/;
@@ -86,6 +102,7 @@ interface StoredState {
   branch?: string;
   pullRequestUrl?: string;
   disputes?: TestDispute[];
+  builtTurn?: number;
 }
 
 function toState(idea: Idea): StoredState {
@@ -96,6 +113,7 @@ function toState(idea: Idea): StoredState {
     branch: idea.branch,
     pullRequestUrl: idea.pullRequestUrl,
     disputes: idea.disputes,
+    builtTurn: idea.builtTurn,
   };
 }
 
@@ -196,6 +214,55 @@ export class IdeaStore {
     return data.html_url;
   }
 
+  async pullRequest(url: string): Promise<PullRequestState> {
+    const pull_number = pullNumberFrom(url);
+    // GitHub computes mergeability in the background; it reads "unknown" until then.
+    for (let attempt = 0; ; attempt++) {
+      const { data } = await this.octokit.pulls.get({
+        ...this.repo,
+        pull_number,
+      });
+      if (
+        data.mergeable_state !== "unknown" ||
+        data.state !== "open" ||
+        attempt >= 5
+      ) {
+        return {
+          number: data.number,
+          open: data.state === "open",
+          merged: data.merged,
+          mergeableState: data.mergeable_state,
+        };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+  }
+
+  /** Squash-merges the pull request. */
+  async merge(pullNumber: number, title: string): Promise<void> {
+    await this.octokit.pulls.merge({
+      ...this.repo,
+      pull_number: pullNumber,
+      merge_method: "squash",
+      commit_title: `${title} (#${pullNumber})`,
+    });
+  }
+
+  /** Closes the idea's issue as done and deletes its branch on GitHub. */
+  async close(idea: Idea): Promise<void> {
+    await this.octokit.issues.update({
+      ...this.repo,
+      issue_number: idea.issueNumber,
+      state: "closed",
+      state_reason: "completed",
+    });
+    if (idea.branch) {
+      await this.octokit.git
+        .deleteRef({ ...this.repo, ref: `heads/${idea.branch}` })
+        .catch(() => undefined);
+    }
+  }
+
   /** Loads one idea by issue number. */
   async get(issueNumber: number): Promise<Idea> {
     const { data: issue } = await this.octokit.issues.get({
@@ -237,6 +304,12 @@ export class IdeaStore {
   }
 }
 
+export function pullNumberFrom(url: string): number {
+  const match = /\/pull\/(\d+)/.exec(url);
+  if (!match?.[1]) throw new Error(`Not a pull request URL: ${url}`);
+  return Number(match[1]);
+}
+
 export function statusFor(result: PoResult): IdeaStatus {
   if (result.decision === "ready_for_spec") return "spec-ready";
   if (result.decision === "reject") return "rejected";
@@ -245,10 +318,32 @@ export function statusFor(result: PoResult): IdeaStatus {
 
 /** The spec from the product owner's latest evaluation, if it wrote one. */
 export function latestSpec(idea: Idea): Spec | null {
-  const latest = [...idea.transcript]
-    .reverse()
-    .find((turn) => turn.role === "po");
+  const index = latestPoTurn(idea);
+  const latest = index === -1 ? undefined : idea.transcript[index];
   return latest?.role === "po" ? latest.result.spec : null;
+}
+
+/** Transcript index of the product owner's latest evaluation, or -1. */
+export function latestPoTurn(idea: Idea): number {
+  for (let index = idea.transcript.length - 1; index >= 0; index--) {
+    if (idea.transcript[index]?.role === "po") return index;
+  }
+  return -1;
+}
+
+/** The spec the open pull request implements, and the feedback given since. */
+export function builtVersion(
+  idea: Idea,
+): { spec: Spec; feedback: string[] } | null {
+  if (idea.builtTurn === undefined) return null;
+  const built = idea.transcript[idea.builtTurn];
+  if (built?.role !== "po" || !built.result.spec) return null;
+  const feedback = idea.transcript
+    .slice(idea.builtTurn + 1)
+    .flatMap((turn) =>
+      turn.role === "submitter" && turn.feedback ? [turn.text] : [],
+    );
+  return { spec: built.result.spec, feedback };
 }
 
 export function roundComment(result: PoResult, replies: string[]): string {

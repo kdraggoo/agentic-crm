@@ -52,6 +52,25 @@ export async function createWorktree(
   return { dir, branch };
 }
 
+/** Removes the idea's worktree, local branch and saved test report, once it is merged. */
+export async function removeWorktree(
+  issueNumber: number,
+  title: string,
+): Promise<void> {
+  const dir = path.join(WORKTREES_DIR, `idea-${issueNumber}`);
+  if (existsSync(dir)) {
+    await runOrThrow("git", ["worktree", "remove", "--force", dir], {
+      cwd: REPO_DIR,
+    });
+  }
+  await run("git", ["branch", "-D", branchName(issueNumber, title)], {
+    cwd: REPO_DIR,
+  });
+  await rm(path.join(WORKTREES_DIR, `idea-${issueNumber}.test-report.json`), {
+    force: true,
+  });
+}
+
 /**
  * Opens the idea's existing worktree without resetting it, for reusing work already
  * committed there. Throws when there is none.
