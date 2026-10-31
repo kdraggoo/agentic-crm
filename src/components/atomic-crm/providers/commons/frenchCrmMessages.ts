@@ -439,6 +439,8 @@ export const frenchCrmMessages = {
         "Erreur lors du chargement de la dernière activité",
       latest_notes: "Mes dernières notes",
       latest_notes_added_ago: "ajouté %{timeAgo}",
+      sales_funnel: "Entonnoir des ventes",
+      sales_funnel_empty: "Aucune affaire active",
       stepper: {
         install: "Installer Atomic CRM",
         progress: "%{step}/3 terminé",
