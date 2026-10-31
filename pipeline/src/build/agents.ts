@@ -85,6 +85,11 @@ export const BuildReportSchema = z.object({
     ),
   summary: z.string().describe("What changed and why, in a few sentences"),
   changed_files: z.array(z.string()),
+  deleted_files: z
+    .array(z.string())
+    .describe(
+      "Repo-relative files to delete (you can't delete files yourself); the pipeline deletes them",
+    ),
   unit_tests_added: z.array(z.string()),
   docs_updated: z.array(z.string()).describe("docs/product files updated"),
   reviewer_notes: z
