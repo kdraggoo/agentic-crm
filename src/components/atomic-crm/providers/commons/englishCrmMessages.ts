@@ -433,6 +433,8 @@ export const englishCrmMessages = {
       latest_activity_error: "Error loading latest activity",
       latest_notes: "My Latest Notes",
       latest_notes_added_ago: "added %{timeAgo}",
+      sales_funnel: "Sales funnel",
+      sales_funnel_empty: "No active deals",
       stepper: {
         install: "Install Atomic CRM",
         progress: "%{step}/3 done",

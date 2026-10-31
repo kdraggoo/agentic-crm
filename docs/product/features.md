@@ -290,6 +290,7 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **Where:** `crm/dashboard/DealsChart.tsx` (stage values `won`/`lost` hardcoded; labels from config).
 - **Config:** `currency`, `dealStages` labels.
 - **Demo mode:** works.
+- **Related:** F-DASH-07.
 
 ### F-DASH-04 Latest activity
 - **What:** Team-wide activity log (10 per page) on desktop and mobile dashboards.
@@ -307,6 +308,13 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **What:** Explanatory card shown on dashboards when built in demo mode.
 - **Where:** `crm/dashboard/Welcome.tsx`; env `VITE_IS_DEMO=true`.
 - **Demo mode:** demo only.
+
+### F-DASH-07 Sales funnel
+- **What:** Desktop dashboard card listing each active stage from `dealStages` (in configured order) with deal count, total amount in the configured currency, and a horizontal bar whose width is proportional to the count of the largest stage. Excludes stages flagged in `dealPipelineStatuses` (default: `won`, `lost`, `delayed`) and archived deals. Empty state when every included stage has 0 deals: `No active deals`. Not rendered on the mobile dashboard.
+- **Where:** `crm/dashboard/SalesFunnel.tsx`, placed in the grid by `crm/dashboard/Dashboard.tsx`.
+- **Config:** `dealStages`, `dealPipelineStatuses`, `currency`.
+- **Demo mode:** works.
+- **Related:** F-DASH-03, F-DEAL-01, F-SET-02.
 
 ---
 

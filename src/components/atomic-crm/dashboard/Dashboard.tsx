@@ -5,6 +5,7 @@ import { DashboardActivityLog } from "./DashboardActivityLog";
 import { DashboardStepper } from "./DashboardStepper";
 import { DealsChart } from "./DealsChart";
 import { HotContacts } from "./HotContacts";
+import { SalesFunnel } from "./SalesFunnel";
 import { TasksList } from "./TasksList";
 import { Welcome } from "./Welcome";
 
@@ -54,6 +55,7 @@ export const Dashboard = () => {
       <div className="md:col-span-6">
         <div className="flex flex-col gap-6">
           {totalDeal ? <DealsChart /> : null}
+          <SalesFunnel />
           <DashboardActivityLog />
         </div>
       </div>
