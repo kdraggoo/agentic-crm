@@ -35,7 +35,7 @@ export const defaultDealStages = [
   { value: "delayed", label: "Delayed" },
 ];
 
-export const defaultDealPipelineStatuses = ["won"];
+export const defaultDealPipelineStatuses = ["won", "lost", "delayed"];
 
 export const defaultDealCategories = [
   { value: "other", label: "Other" },

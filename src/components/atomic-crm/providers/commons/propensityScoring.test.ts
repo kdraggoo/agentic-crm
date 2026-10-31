@@ -393,4 +393,28 @@ describe("isDealActive", () => {
   it("includes active deals in regular stages", () => {
     expect(isDealActive({ stage: "opportunity" }, ["won"])).toBe(true);
   });
+
+  // With the new default `['won','lost','delayed']`, closed-out deals in
+  // any of the three terminal stages must be excluded from scoring so no
+  // badge is rendered (AC1, AC8). Opportunity / proposal-sent /
+  // in-negociation stay active (AC2).
+  const defaultClosedStages = ["won", "lost", "delayed"];
+
+  it("excludes Lost deals under the new default pipeline statuses", () => {
+    expect(isDealActive({ stage: "lost" }, defaultClosedStages)).toBe(false);
+  });
+
+  it("excludes Delayed deals under the new default pipeline statuses", () => {
+    expect(isDealActive({ stage: "delayed" }, defaultClosedStages)).toBe(false);
+  });
+
+  it("excludes Won deals under the new default pipeline statuses", () => {
+    expect(isDealActive({ stage: "won" }, defaultClosedStages)).toBe(false);
+  });
+
+  it("keeps active-pipeline stages scorable under the new default", () => {
+    for (const stage of ["opportunity", "proposal-sent", "in-negociation"]) {
+      expect(isDealActive({ stage }, defaultClosedStages)).toBe(true);
+    }
+  });
 });

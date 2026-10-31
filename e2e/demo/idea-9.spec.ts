@@ -21,17 +21,21 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 const BUCKETS = ["Low", "Medium", "High"] as const;
 type Bucket = (typeof BUCKETS)[number];
 
-/** All stage column headings shown on the Kanban board (default config). */
+/**
+ * Stage column headings whose cards must show a propensity badge under the
+ * default `dealPipelineStatuses` (`['won','lost','delayed']`, F-DEAL-07).
+ */
 const PIPELINE_STAGE_HEADINGS = [
   "Opportunity",
   "Proposal Sent",
   "In Negotiation",
-  "Lost",
-  "Delayed",
 ] as const;
 
-/** Stage that is flagged in dealPipelineStatuses as "won" by default. */
-const CLOSED_STAGE_HEADING = "Won";
+/**
+ * Stages flagged in the default `dealPipelineStatuses`: Won / Lost / Delayed
+ * cards never show a propensity badge, even with a manual override (idea-12).
+ */
+const CLOSED_STAGE_HEADINGS = ["Won", "Lost", "Delayed"] as const;
 
 /** After a save the deal's show dialog opens over the board; close it. */
 async function closeDealDialog(page: Page) {
@@ -66,6 +70,22 @@ function cardsInStage(page: Page, stageHeading: string): Locator {
 /** A badge locator matching any of the three buckets inside a card. */
 function badgeInCard(card: Locator): Locator {
   return card.getByText(/^(Low|Medium|High)$/).first();
+}
+
+/**
+ * Pick the first draggable card nested under an "active" stage (one that
+ * must carry a propensity badge). Lost/Delayed/Won columns are default-closed
+ * since idea-12, so picking `dealCards(page).first()` can land on a card
+ * that intentionally has no badge.
+ */
+async function firstActiveCard(page: Page): Promise<Locator> {
+  for (const heading of PIPELINE_STAGE_HEADINGS) {
+    const cards = cardsInStage(page, heading);
+    if ((await cards.count()) > 0) {
+      return cards.first();
+    }
+  }
+  throw new Error("No active-stage card found on the demo board");
 }
 
 test.describe("propensity-to-buy badge on deal cards", () => {
@@ -104,14 +124,14 @@ test.describe("propensity-to-buy badge on deal cards", () => {
     }
   });
 
-  test("AC2: cards in the won stage do not show the propensity badge while active cards do", async ({
+  test("AC2: cards in closed-out stages do not show the propensity badge while active cards do", async ({
     page,
   }) => {
-    const wonHeading = page.getByRole("heading", {
-      name: CLOSED_STAGE_HEADING,
-      exact: true,
-    });
-    await expect(wonHeading).toBeVisible();
+    for (const heading of CLOSED_STAGE_HEADINGS) {
+      await expect(
+        page.getByRole("heading", { name: heading, exact: true }),
+      ).toBeVisible();
+    }
 
     // 1. There is at least one active card showing a badge — pins the test
     //    to the full behavior, so it fails before the feature exists
@@ -119,28 +139,27 @@ test.describe("propensity-to-buy badge on deal cards", () => {
     const activeBadge = page.locator(
       "[data-rfd-droppable-id='opportunity'] [aria-label^='Propensity to buy:'], " +
         "[data-rfd-droppable-id='proposal-sent'] [aria-label^='Propensity to buy:'], " +
-        "[data-rfd-droppable-id='in-negociation'] [aria-label^='Propensity to buy:'], " +
-        "[data-rfd-droppable-id='lost'] [aria-label^='Propensity to buy:'], " +
-        "[data-rfd-droppable-id='delayed'] [aria-label^='Propensity to buy:']",
+        "[data-rfd-droppable-id='in-negociation'] [aria-label^='Propensity to buy:']",
     );
     await expect(
       activeBadge.first(),
       "at least one active deal must carry a propensity badge",
     ).toBeVisible();
 
-    // 2. No Won card carries a propensity badge (even visible bucket text).
-    const wonCards = cardsInStage(page, CLOSED_STAGE_HEADING);
-    const wonCount = await wonCards.count();
-    if (wonCount > 0) {
-      for (let i = 0; i < wonCount; i += 1) {
-        const card = wonCards.nth(i);
+    // 2. No card in a default-closed stage carries a propensity badge
+    //    (idea-12 added Lost / Delayed to the default alongside Won).
+    for (const heading of CLOSED_STAGE_HEADINGS) {
+      const closedCards = cardsInStage(page, heading);
+      const closedCount = await closedCards.count();
+      for (let i = 0; i < closedCount; i += 1) {
+        const card = closedCards.nth(i);
         await expect(
           card.getByLabel(/^Propensity to buy:/),
-          "won deals must not expose a propensity accessible label",
+          `${heading} deals must not expose a propensity accessible label`,
         ).toHaveCount(0);
         await expect(
           card.getByText(/^(Low|Medium|High)$/),
-          "won deals must not show a bucket label",
+          `${heading} deals must not show a bucket label`,
         ).toHaveCount(0);
       }
     }
@@ -204,8 +223,10 @@ test.describe("propensity-to-buy badge on deal cards", () => {
   test("AC5: saving a manual bucket makes the Kanban card reflect that bucket", async ({
     page,
   }) => {
-    // remember the id of the first card so we can find it again after save
-    const firstCard = dealCards(page).first();
+    // Pick a card in an active stage so the manual override is actually
+    // rendered on the board (deals in Won/Lost/Delayed never show a badge
+    // since idea-12, even with an override).
+    const firstCard = await firstActiveCard(page);
     const draggableId = await firstCard.getAttribute("data-rfd-draggable-id");
     expect(draggableId, "card must expose a draggable id").toBeTruthy();
 
@@ -238,8 +259,9 @@ test.describe("propensity-to-buy badge on deal cards", () => {
   test("AC3-override: a manually-overridden card tooltip says 'Set manually'", async ({
     page,
   }) => {
-    // override one card to Medium so we have a known manual bucket to probe
-    const firstCard = dealCards(page).first();
+    // override one active-stage card to Medium so we have a known manual
+    // bucket to probe (closed-stage cards suppress the badge entirely).
+    const firstCard = await firstActiveCard(page);
     const draggableId = await firstCard.getAttribute("data-rfd-draggable-id");
     expect(draggableId).toBeTruthy();
 
@@ -268,8 +290,9 @@ test.describe("propensity-to-buy badge on deal cards", () => {
   test("AC6: switching the override back to Auto clears it and the computed bucket returns", async ({
     page,
   }) => {
-    // 1. force a known bucket so we can later observe a change
-    const firstCard = dealCards(page).first();
+    // 1. force a known bucket on an active-stage card (closed stages
+    //    suppress the badge; see idea-12).
+    const firstCard = await firstActiveCard(page);
     const draggableId = await firstCard.getAttribute("data-rfd-draggable-id");
     expect(draggableId).toBeTruthy();
 
