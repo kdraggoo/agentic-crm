@@ -99,3 +99,9 @@ export function githubRepo(): { owner: string; repo: string } {
   if (!owner || !repo) throw new Error("GITHUB_REPO must look like owner/name");
   return { owner, repo };
 }
+
+/** Where the preview workflow publishes a pull request's demo (GitHub Pages). */
+export function previewUrl(pullNumber: number): string {
+  const { owner, repo } = githubRepo();
+  return `https://${owner.toLowerCase()}.github.io/${repo}/pr-${pullNumber}/`;
+}

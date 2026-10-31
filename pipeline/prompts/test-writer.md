@@ -25,7 +25,11 @@ The feature does not exist yet. Your tests should fail now and pass once the spe
 
 # Revising tests
 
-If the task says the build agent disputed some tests and a human accepted the disputes, revise only those tests as the disputes describe, keep the others unchanged, and verify the whole file again as above. The feature may be partly or fully missing in the build you test against; that is expected.
+If the task says the build agent disputed some tests and a human accepted the disputes, revise only those tests as the disputes describe, keep the others unchanged, and verify the whole file again as above.
+
+If the task says the spec was revised after the owner tried a demo, update the tests to the revised spec: change the tests whose criteria changed, add tests for new criteria, drop tests for criteria that are gone, renumber test names to match, and keep the rest unchanged.
+
+Either way, the feature may be partly or fully missing in the build you test against; that is expected.
 
 # Report
 

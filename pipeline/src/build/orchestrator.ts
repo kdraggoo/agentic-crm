@@ -2,8 +2,10 @@ import { MAX_BUILD_ATTEMPTS } from "../config.js";
 import { ClaudeTimeoutError } from "../claude.js";
 import type { Spec } from "../po/schema.js";
 import {
+  disputeRevision,
   formatDispute,
   runBuildAgent,
+  specRevision,
   type TestDispute,
   type TestReport,
 } from "./agents.js";
@@ -57,6 +59,11 @@ export interface BuildRequest {
   /** Continue a build that paused on test disputes, with the human's decision. */
   resume?: { disputes: TestDispute[]; decision: "accepted" | "rejected" };
   /**
+   * Revise a built idea after the owner tried its demo: `spec` is the revised spec,
+   * and the tests and the implementation on the open pull request are updated to it.
+   */
+  revise?: { previousSpec: Spec; feedback: string[] };
+  /**
    * Opens or updates the pull request with this body and returns its URL. When set,
    * a build is only done once GitHub CI passes on it; without it, CI is skipped.
    */
@@ -101,7 +108,7 @@ export async function buildIdea(request: BuildRequest): Promise<BuildOutcome> {
         locked,
         issueNumber,
         spec,
-        request.resume.disputes,
+        disputeRevision(locked.testFile, request.resume.disputes),
         progress,
       );
       previousFailure =
@@ -113,6 +120,23 @@ export async function buildIdea(request: BuildRequest): Promise<BuildOutcome> {
         "Make the app satisfy them without changing behavior the spec doesn't ask for. If that is truly impossible, report status blocked and explain why.",
       ].join("\n");
     }
+  } else if (request.revise) {
+    const { previousSpec, feedback } = request.revise;
+    locked = await existingTests(issueNumber, request.title, {
+      keepWork: false,
+    });
+    locked = await amendTests(
+      locked,
+      issueNumber,
+      spec,
+      specRevision(locked.testFile, previousSpec, feedback),
+      progress,
+    );
+    previousFailure = [
+      "The owner tried the demo of your previous build and asked for changes. The spec above is the revised version, and the test agent updated the locked tests to match it. Your previous implementation is in the working tree: change it to fit the revised spec, and keep what the revision doesn't touch.",
+      "The owner's feedback:",
+      ...feedback,
+    ].join("\n\n");
   } else if (request.reuseTests) {
     await progress("♻️ Reusing the committed acceptance tests…");
     locked = await existingTests(issueNumber, request.title, {

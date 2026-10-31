@@ -114,6 +114,33 @@ export function formatDispute(dispute: TestDispute): string {
   ].join("\n");
 }
 
+/** Test-agent instructions for disputes a human accepted. */
+export function disputeRevision(
+  testFile: string,
+  disputes: TestDispute[],
+): string {
+  return [
+    `Revise the acceptance tests in \`${testFile}\`. The build agent disputed these tests and a human reviewer accepted the disputes. Change only what the disputes require, keep every other test as it is, and re-verify the whole file.`,
+    "## Accepted disputes",
+    ...disputes.map(formatDispute),
+  ].join("\n\n");
+}
+
+/** Test-agent instructions for a spec revised after the owner tried the demo. */
+export function specRevision(
+  testFile: string,
+  previousSpec: Spec,
+  feedback: string[],
+): string {
+  return [
+    `Update the acceptance tests in \`${testFile}\` to the revised spec below. The owner tried a demo of the feature built from the previous spec and asked for changes, and the product owner revised the spec. Change the tests whose acceptance criteria changed, add tests for new criteria, remove tests for criteria that were dropped, renumber test names to match the revised criteria, and keep every other test as it is. Then verify the whole file as usual.`,
+    "## The owner's feedback",
+    ...feedback.map((text) => `> ${text.split("\n").join("\n> ")}`),
+    "## Acceptance criteria of the previous spec",
+    ...previousSpec.acceptance_criteria.map((c, i) => `${i + 1}. ${c}`),
+  ].join("\n\n");
+}
+
 async function prompt(file: string): Promise<string> {
   return readFile(path.join(PROMPTS_DIR, file), "utf8");
 }
@@ -122,17 +149,13 @@ export async function runTestAgent(
   dir: string,
   spec: Spec,
   testFile: string,
-  /** Disputes a human accepted: revise the existing tests instead of writing new ones. */
-  amend?: TestDispute[],
+  /** What to change in the existing tests, instead of writing new ones. */
+  revision?: string,
   /** Extra instruction, e.g. to finish a draft left by a run that timed out. */
   note?: string,
 ): Promise<{ report: TestReport; costUsd: number }> {
-  const task = amend
-    ? [
-        `Revise the acceptance tests in \`${testFile}\`. The build agent disputed these tests and a human reviewer accepted the disputes. Change only what the disputes require, keep every other test as it is, and re-verify the whole file.`,
-        "## Accepted disputes",
-        ...amend.map(formatDispute),
-      ]
+  const task = revision
+    ? [revision]
     : [`Write the acceptance tests for this spec in \`${testFile}\`.`];
   const { output, costUsd } = await runClaude({
     systemPrompt: await prompt("test-writer.md"),

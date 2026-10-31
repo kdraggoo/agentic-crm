@@ -1,0 +1,76 @@
+name: 🌐 Demo preview
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+        types:
+            - opened
+            - reopened
+            - synchronize
+            - closed
+
+permissions:
+    contents: write
+    pull-requests: write
+
+jobs:
+    deploy:
+        name: 🌐 Deploy demo preview
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        # Pull requests from forks get a read-only token and can't publish.
+        if: >-
+            github.event.action != 'closed' &&
+            (github.event_name == 'push' ||
+            github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+            SITE_DIR: ${{ github.event_name == 'push' && '.' || format('pr-{0}', github.event.pull_request.number) }}
+            SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ github.event_name == 'pull_request' && format('pr-{0}/', github.event.pull_request.number) || '' }}
+        steps:
+            - name: 📥 Checkout repo
+              uses: actions/checkout@v4
+
+            - name: ⚙️ Setup node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+                  cache: npm
+
+            - name: 📥 Download deps
+              run: npm ci
+
+            - name: 🔨 Build FakeRest demo
+              run: npm run build:demo
+
+            - name: 🌐 Publish to GitHub Pages
+              run: scripts/publish-preview.sh "$SITE_DIR" dist
+
+            - name: 💬 Link the preview on the pull request
+              if: github.event_name == 'pull_request' && github.event.action != 'synchronize'
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: >-
+                  gh pr comment ${{ github.event.pull_request.number }}
+                  --body "🌐 Demo preview: $SITE_URL (updated on every push; it can take a minute after this check finishes)."
+
+            - name: 📝 Summary
+              run: |
+                  echo "🌐 Demo preview: $SITE_URL" >> "$GITHUB_STEP_SUMMARY"
+
+    remove:
+        name: 🧹 Remove demo preview
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        if: >-
+            github.event.action == 'closed' &&
+            github.event.pull_request.head.repo.full_name == github.repository
+        steps:
+            # The pull request's merge ref is gone once it closes; the script is on main.
+            - name: 📥 Checkout repo
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.event.repository.default_branch }}
+
+            - name: 🧹 Remove from GitHub Pages
+              run: scripts/publish-preview.sh "pr-${{ github.event.pull_request.number }}" --remove

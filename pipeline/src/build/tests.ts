@@ -3,12 +3,7 @@ import path from "node:path";
 import { TEST_TIMEOUT_MS, WORKTREES_DIR } from "../config.js";
 import { ClaudeTimeoutError } from "../claude.js";
 import type { Spec } from "../po/schema.js";
-import {
-  TestReportSchema,
-  runTestAgent,
-  type TestDispute,
-  type TestReport,
-} from "./agents.js";
+import { TestReportSchema, runTestAgent, type TestReport } from "./agents.js";
 import { installDependencies } from "./checks.js";
 import {
   changedPaths,
@@ -115,7 +110,8 @@ export async function existingTests(
 }
 
 /**
- * Has the test agent correct the tests a human agreed were wrong. The build agent's
+ * Has the test agent revise the locked tests: correct the ones a human agreed were
+ * wrong, or follow a spec revised after demo feedback. The build agent's
  * work, committed or not, is parked so the test agent sees the app as it is on the base
  * branch, then put back as uncommitted changes on top of the amended tests.
  */
@@ -123,7 +119,7 @@ export async function amendTests(
   locked: LockedTests,
   issueNumber: number,
   spec: Spec,
-  disputes: TestDispute[],
+  revision: string,
   progress: Progress,
 ): Promise<LockedTests> {
   const { dir, testFile } = locked;
@@ -141,13 +137,13 @@ export async function amendTests(
     cwd: dir,
   });
 
-  await progress("🧪 Test agent is correcting the disputed tests…");
+  await progress("🧪 Test agent is revising the acceptance tests…");
   const tests = await runTestAgentWithRetry(
     dir,
     spec,
     testFile,
     progress,
-    disputes,
+    revision,
   );
   const testCommit = await keepOnlyTestFile(
     dir,
@@ -177,10 +173,10 @@ async function runTestAgentWithRetry(
   spec: Spec,
   testFile: string,
   progress: Progress,
-  amend?: TestDispute[],
+  revision?: string,
 ): Promise<Awaited<ReturnType<typeof runTestAgent>>> {
   try {
-    return await runTestAgent(dir, spec, testFile, amend);
+    return await runTestAgent(dir, spec, testFile, revision);
   } catch (error: unknown) {
     if (!(error instanceof ClaudeTimeoutError)) throw error;
     const testPath = path.join(dir, testFile);
@@ -195,7 +191,7 @@ async function runTestAgentWithRetry(
       dir,
       spec,
       testFile,
-      amend,
+      revision,
       `A previous run drafted \`${testFile}\` but was stopped after ${Math.round(TEST_TIMEOUT_MS / 60_000)} minutes, before it reported. The draft is in the working tree; everything else it changed was reverted. Don't start over: review the draft, fix what's wrong, run it against the demo build once, and report. Keep verification short.`,
     );
   }
