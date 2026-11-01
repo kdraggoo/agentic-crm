@@ -37,7 +37,7 @@ The frontend is a static SPA (hash routing, `base: "./"`) built by Vite. All app
 | `src/components/atomic-crm/` | The CRM app, one folder per domain (see §3) |
 | `src/components/atomic-crm/root/` | `CRM.tsx` (composition root), configuration context/defaults |
 | `src/components/atomic-crm/providers/` | `supabase/`, `fakerest/`, `commons/` (shared logic, i18n, canAccess) |
-| `src/components/atomic-crm/types.ts` | Domain types (`Contact`, `Company`, `Deal`, `Sale`, `Task`, notes, `Activity`, `SearchResult`) |
+| `src/components/atomic-crm/types.ts` | Domain types (`Contact`, `Company`, `Deal`, `Sale`, `Task`, `Product`, `DealProduct`, notes, `Activity`, `SearchResult`) |
 | `src/components/admin/` | shadcn-admin-kit (ra-core bindings: List, Form, inputs, fields). Mutable, edit in place |
 | `src/components/ui/` | shadcn/ui primitives (`base-vega` style, Base UI). Mutable |
 | `src/components/supabase/` | Auth pages: set/forgot password, OAuth consent |
@@ -134,6 +134,8 @@ Declarative schema in `supabase/schemas/`, loaded in file order:
 - `deal_notes`: `deal_id`, type, text, date, `attachments jsonb[]`, `sales_id`.
 - `sales`: CRM users; `user_id` → `auth.users` (unique), email citext, `administrator`, `disabled`, `avatar`, `secondary_emails` jsonb array.
 - `tags`: name, color. `tasks`: `contact_id`, type, text, due_date, done_date, `sales_id`.
+- `products`: name, sku, category, `unit_price numeric`, description, `is_archived boolean`, `sales_id`.
+- `deal_products`: `deal_id` (cascade), `product_id` (restrict), quantity, `unit_price numeric`, `sort_order smallint`.
 - `configuration`: singleton (`id = 1` check), `config` jsonb (= `ConfigurationContextValue`).
 - `favicons_excluded_domains`: email domains not used for favicon lookup (seeded in `seed.sql`).
 
@@ -145,9 +147,9 @@ Declarative schema in `supabase/schemas/`, loaded in file order:
 
 **Key functions** (`02_functions.sql`, `08_search.sql`): `handle_new_user`/`handle_update_user` (auth → sales sync), `is_admin()`, `set_sales_id_default` (fills `sales_id` from `auth.uid()`), `handle_contact_saved` + `get_avatar_for_email` (Gravatar/favicon avatar), `handle_company_saved` + `get_domain_favicon` (logo from website), `lowercase_email_jsonb`, `handle_contact_note_created_or_updated` (bumps `contacts.last_seen`), `handle_tag_deleted`, `cleanup_note_attachments` + `get_note_attachments_function_url` (calls edge fn via `pg_net`), `get_user_id_by_email` (service_role only), `merge_contacts(loser, winner)` (present but the app uses the edge function), `global_search(query, resources, max_results)` (authenticated only).
 
-**Triggers** (`04_triggers.sql`): `set_*_sales_id_trigger` before insert on companies, contacts, contact_notes, deals, deal_notes, tasks; `company_saved`; `10_lowercase_contact_emails` then `20_contact_saved` (name prefix sets order); `on_public_contact_notes_created_or_updated`; `on_{contact,deal}_notes_{attachments_updated,deleted}_delete_note_attachments`; `on_tag_deleted`; `on_auth_user_created`, `on_auth_user_updated` on `auth.users`.
+**Triggers** (`04_triggers.sql`): `set_*_sales_id_trigger` before insert on companies, contacts, contact_notes, deals, deal_notes, tasks, products; `company_saved`; `10_lowercase_contact_emails` then `20_contact_saved` (name prefix sets order); `on_public_contact_notes_created_or_updated`; `on_{contact,deal}_notes_{attachments_updated,deleted}_delete_note_attachments`; `on_tag_deleted`; `on_auth_user_created`, `on_auth_user_updated` on `auth.users`.
 
-**RLS approach** (`05_policies.sql`): RLS on every table. Business tables (companies, contacts, notes, deals, tags, tasks, favicons): any `authenticated` user has full select/insert/update/delete (`using (true)`), so no per-owner isolation. `sales`: select only; all writes go through the `users` edge function with the service role. `configuration`: read for authenticated, insert/update only when `is_admin()`. `anon` gets nothing except `init_state`.
+**RLS approach** (`05_policies.sql`): RLS on every table. Business tables (companies, contacts, notes, deals, tags, tasks, deal_products, favicons): any `authenticated` user has full select/insert/update/delete (`using (true)`), so no per-owner isolation. `products`: select for all authenticated, insert/update/delete only when `is_admin()`. `sales`: select only; all writes go through the `users` edge function with the service role. `configuration`: read for authenticated, insert/update only when `is_admin()`. `anon` gets nothing except `init_state`.
 
 **Storage.** Bucket `attachments` (public) is created in `supabase/migrations/20240730075029_init_db.sql`, not in `schemas/`. Policies: authenticated select/insert/delete (`07_storage.sql`). Holds note attachments, company logos, avatars, config logos. Orphans removed by the `delete_note_attachments` edge function.
 
@@ -238,6 +240,9 @@ Function env (`supabase/functions/.env`): `POSTMARK_*`, `VITE_INBOUND_EMAIL`, `S
 5. FakeRest: add the collection to `dataGenerator/types.ts` (`Db`) + a generator in `dataGenerator/index.ts`; emulate any trigger/view logic in `fakerest/dataProvider.ts` callbacks.
 6. Restrict in `providers/commons/canAccess.ts` if admin-only. i18n keys `resources.<resource>.*` in both message files.
 7. If it should be globally searchable: `fts` column + branch in `global_search()` (`08_search.sql`), `SearchResourceName` in `types.ts`, `search/searchModel.ts`, and `fakerest/search.ts`.
+8. A headless resource managed from Settings (no top-level nav, no list/show/edit pages): register with `<Resource name="…" />` (no component props), build the UI as a Settings subsection (same pattern as `tags` and `products`), and add to `STANDALONE_SECTIONS` in `SettingsPage.tsx`.
+
+**FakeRest emulation of `deal_products`**: The `deal_products` collection is seeded after `deals` by `dataGenerator/dealProducts.ts` so it can reference both deals and products. Lifecycle callbacks on the `products` resource in `fakerest/dataProvider.ts` prevent hard-delete while any `deal_products` row references the product and stamp `created_at`/`updated_at` on create/update.
 
 **A new list filter**:
 1. Add a `ToggleFilterButton`/input in `<entity>/<Entity>ListFilter.tsx` (grouped with `filters/FilterCategory.tsx`); value uses PostgREST syntax `field@op` (e.g. `"last_seen@gte"` in `contacts/ContactListFilter.tsx`).

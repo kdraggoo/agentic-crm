@@ -12,6 +12,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useConfigurationContext } from "../root/ConfigurationContext";
 import { AutocompleteCompanyInput } from "../companies/AutocompleteCompanyInput.tsx";
 import { AutocompleteContactInput } from "../contacts/AutocompleteContactInput.tsx";
+import { DealLineItemsInput } from "./DealLineItemsInput";
 
 export const DealInputs = () => {
   const isMobile = useIsMobile();
@@ -24,6 +25,9 @@ export const DealInputs = () => {
         <Separator orientation={isMobile ? "horizontal" : "vertical"} />
         <DealMiscInputs />
       </div>
+
+      <Separator />
+      <DealLineItemsInput />
     </div>
   );
 };

@@ -351,6 +351,43 @@ export const englishCrmMessages = {
       regarding_contact: "(Re: %{name})",
       updated: "Task updated",
     },
+    products: {
+      name: "Product |||| Products",
+      fields: {
+        name: "Name",
+        sku: "SKU",
+        category: "Category",
+        unit_price: "Unit price",
+        description: "Description",
+        is_archived: "Archived",
+      },
+      action: {
+        create: "Add product",
+        edit: "Edit",
+        archive: "Archive",
+        unarchive: "Unarchive",
+      },
+      empty: "No products yet.",
+      archived_section: "Archived",
+      search_placeholder: "Search products…",
+      delete_error:
+        "Cannot delete this product because it is referenced by existing deals.",
+    },
+    deal_products: {
+      name: "Line item |||| Line items",
+      fields: {
+        product_id: "Product",
+        quantity: "Quantity",
+        unit_price: "Unit price",
+        line_total: "Total",
+      },
+      section_title: "Line items",
+      add: "Add line item",
+      remove: "Remove",
+      line_items_total: "Line items total",
+      sync_error:
+        "Failed to save line items. Please re-open the deal and try again.",
+    },
     tags: {
       name: "Tag |||| Tags",
       action: {

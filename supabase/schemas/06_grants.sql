@@ -102,6 +102,14 @@ grant all on table public.configuration to anon;
 grant all on table public.configuration to authenticated;
 grant all on table public.configuration to service_role;
 
+grant all on table public.products to anon;
+grant all on table public.products to authenticated;
+grant all on table public.products to service_role;
+
+grant all on table public.deal_products to anon;
+grant all on table public.deal_products to authenticated;
+grant all on table public.deal_products to service_role;
+
 grant all on table public.favicons_excluded_domains to anon;
 grant all on table public.favicons_excluded_domains to authenticated;
 grant all on table public.favicons_excluded_domains to service_role;
@@ -159,6 +167,14 @@ grant all on sequence public.tags_id_seq to service_role;
 grant all on sequence public.tasks_id_seq to anon;
 grant all on sequence public.tasks_id_seq to authenticated;
 grant all on sequence public.tasks_id_seq to service_role;
+
+grant all on sequence public.products_id_seq to anon;
+grant all on sequence public.products_id_seq to authenticated;
+grant all on sequence public.products_id_seq to service_role;
+
+grant all on sequence public.deal_products_id_seq to anon;
+grant all on sequence public.deal_products_id_seq to authenticated;
+grant all on sequence public.deal_products_id_seq to service_role;
 
 -- No default privileges: every new table, view, sequence or function must
 -- declare its grants explicitly in the migration that creates it.

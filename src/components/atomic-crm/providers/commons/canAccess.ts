@@ -27,5 +27,10 @@ export const canAccess = <
     return false;
   }
 
+  // Non admins can read products but cannot create, edit or delete them
+  if (params.resource === "products") {
+    return params.action === "list" || params.action === "show";
+  }
+
   return true;
 };

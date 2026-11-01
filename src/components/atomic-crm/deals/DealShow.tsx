@@ -27,6 +27,7 @@ import { NotesIterator } from "../notes/NotesIterator";
 import { useConfigurationContext } from "../root/ConfigurationContext";
 import type { Deal } from "../types";
 import { ContactList } from "./ContactList";
+import { DealLineItems } from "./DealLineItems";
 import {
   findDealLabel,
   formatDealCategories,
@@ -168,6 +169,8 @@ const DealShowContent = () => {
               <p className="text-sm leading-6">{record.description}</p>
             </div>
           )}
+
+          <DealLineItems dealId={record.id} />
 
           <div className="m-4">
             <Separator className="mb-4" />

@@ -158,16 +158,16 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **Demo mode:** works.
 
 ### F-DEAL-03 Create / edit deal
-- **What:** Modal dialog (routes `/deals/create`, `/deals/:id`): name (required), description, company, contacts (multi), categories (multi), amount, expected closing date (date only), stage, and a "Propensity to buy" selector (Auto / Low / Medium / High; Auto = computed, F-DEAL-07). New deals go to the top of their column.
-- **Where:** `crm/deals/DealCreate.tsx`, `DealEdit.tsx`, `DealInputs.tsx`; migrations `20261026120000_deal_categories.sql`, `20260226163952_deals_expected_closing_date_date_only.sql`, `20261030120000_deals_propensity_override.sql`.
+- **What:** Modal dialog (routes `/deals/create`, `/deals/:id`): name (required), description, company, contacts (multi), categories (multi), amount, expected closing date (date only), stage, a "Propensity to buy" selector (Auto / Low / Medium / High; Auto = computed, F-DEAL-07), and a "Line items" section (F-PROD-02) for attaching products with quantity and editable unit price. A "Line items total" summary appears when items are present; the Budget (amount) field remains independent. New deals go to the top of their column.
+- **Where:** `crm/deals/DealCreate.tsx`, `DealEdit.tsx`, `DealInputs.tsx`, `DealLineItemsInput.tsx`, `lineItemsUtils.ts`; migrations `20261026120000_deal_categories.sql`, `20260226163952_deals_expected_closing_date_date_only.sql`, `20261030120000_deals_propensity_override.sql`.
 - **Config:** `dealStages`, `dealCategories`.
 - **Demo mode:** works.
 
 ### F-DEAL-04 Deal detail
-- **What:** Modal (`/deals/:id/show`) with expected closing date (flagged when past), amount, categories, stage, description, linked contacts, and deal notes; actions Edit / Archive (or Unarchive / Delete when archived).
-- **Where:** `crm/deals/DealShow.tsx`, `crm/deals/ContactList.tsx`.
+- **What:** Modal (`/deals/:id/show`) with expected closing date (flagged when past), amount, categories, stage, description, linked contacts, deal notes, and attached line items (F-PROD-02) showing product name, SKU, quantity, unit price, line total and a "Line items total" summary; actions Edit / Archive (or Unarchive / Delete when archived).
+- **Where:** `crm/deals/DealShow.tsx`, `crm/deals/ContactList.tsx`, `crm/deals/DealLineItems.tsx`.
 - **Demo mode:** works.
-- **Related:** F-NOTE-02, F-DEAL-05.
+- **Related:** F-NOTE-02, F-DEAL-05, F-PROD-02.
 
 ### F-DEAL-05 Archive / unarchive deals
 - **What:** Archiving sets `archived_at` and removes the deal from the board and global search; "View archived deals" opens a dialog grouped by archive date. Unarchive puts the deal back at the top of its stage. Delete is only offered on archived deals (and in the edit dialog).
@@ -390,10 +390,10 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 ## Settings (SET)
 
 ### F-SET-01 Settings page (admin)
-- **What:** Admin-only `/settings` with section nav: Branding, Companies, Deals, Notes, Tasks, Tags. One Save button (pessimistic) for all but tags; "Reset to defaults" refills the form from built-in defaults. Desktop only.
-- **Where:** `crm/settings/SettingsPage.tsx`, `crm/layout/Header.tsx` (`SettingsMenu`, gated by `CanAccess resource="configuration"`).
+- **What:** Admin-only `/settings` with section nav: Branding, Companies, Deals, Notes, Tasks, Tags, Products. One Save button (pessimistic) for all but tags and products; Tags and Products are standalone sections with their own save behavior. "Reset to defaults" refills the form from built-in defaults. Desktop only.
+- **Where:** `crm/settings/SettingsPage.tsx`, `crm/settings/SettingsProducts.tsx`, `crm/settings/ProductDialog.tsx`, `crm/layout/Header.tsx` (`SettingsMenu`, gated by `CanAccess resource="configuration"`).
 - **Demo mode:** works (lost on reload: `memoryStore` + in-memory DB).
-- **Related:** F-TAG-02, F-SET-04.
+- **Related:** F-TAG-02, F-SET-04, F-PROD-01.
 
 ### F-SET-02 Domain value lists
 - **What:** Edit company sectors, deal stages (reorderable), pipeline statuses (stages where the deal isn't actively being worked, so no propensity badge is shown; default: `won`, `lost`, `delayed`; toggle chips), deal categories, note statuses (label + color), task types. Values are slugged from labels on first save and stay stable when relabelled; removing a stage or category still used by a deal, or duplicating one, is rejected.
@@ -571,6 +571,23 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 
 ---
 
+## Products (PROD)
+
+### F-PROD-01 Products catalog
+- **What:** Admin-managed product catalog in Settings → Products section. Each product has name (required), unit price (required), SKU, category (from `dealCategories`), description, and archived status. Products are listed with columns: Name, SKU, Category, Unit price. Text search filters by name, SKU or category. Active and archived products shown in separate sections. Archive/unarchive toggles the `is_archived` flag. Create and edit use a modal dialog; changes are saved immediately (like Tags pattern), independent of the Settings main Save button.
+- **Where:** `crm/settings/SettingsProducts.tsx`, `ProductDialog.tsx`; table `products` (`schemas/01_tables.sql`); RLS: all authenticated can read, only admins can write (`schemas/05_policies.sql`).
+- **Config:** categories from `dealCategories`.
+- **Demo mode:** works (~15 seeded products, at least one archived).
+- **Related:** F-SET-01, F-PROD-02, F-USER-04.
+
+### F-PROD-02 Deal line items
+- **What:** Deal create and edit forms include a "Line items" section with an "Add line item" button. Each line has a product picker (non-archived products), quantity (default 1), editable unit price (auto-filled from product), and computed line total. A "Line items total" summary appears when items exist. The same product can appear on multiple lines. Line items are stored as `deal_products` records, synced on deal save via position-based reconciliation (existing rows are updated in-place, new positions are created, surplus old rows are deleted) to minimise data loss on partial failure. The deal detail modal shows line items with product name, quantity, unit price, line total and the total. The Budget (amount) field is independent and unaffected by line items.
+- **Where:** `crm/deals/DealLineItemsInput.tsx` (form input), `DealLineItems.tsx` (read-only display), `lineItemsUtils.ts` (save/sync helpers), `DealCreate.tsx`, `DealEdit.tsx`, `DealShow.tsx`; table `deal_products` (`schemas/01_tables.sql`).
+- **Demo mode:** works (~50% of deals have 1–3 line items).
+- **Related:** F-DEAL-03, F-DEAL-04, F-PROD-01.
+
+---
+
 ## Known gaps / not supported
 
 - **User deletion.** Users are disabled, never deleted. Evidence: `AGENTS.md`; `fn/users/index.ts` handles only POST/PATCH; no delete in `crm/sales/`; `sales` has no delete policy (`schemas/05_policies.sql`). User doc `doc/src/content/docs/users/user-management.mdx` wrongly says admins can delete users.
@@ -578,6 +595,7 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **Desktop task list page.** `tasks` resource has no list view on desktop (`crm/root/CRM.tsx`); header nav is Dashboard/Contacts/Companies/Deals only (`crm/layout/Header.tsx`).
 - **Task reassignment.** Task form has no owner field; owner is always the creator (`crm/tasks/TaskFormContent.tsx`, `AddTask.tsx`). Tasks must belong to a contact (`tasks.contact_id not null`), not to deals or companies.
 - **Deals on mobile.** No deal screens, deal notes or deal search results on mobile (`MobileAdmin` in `crm/root/CRM.tsx`; `MOBILE_SEARCH_RESOURCES` in `crm/search/searchModel.ts`).
+- **Line items in CSV import/export.** Deal CSV import and export do not include line items (`deal_products`); only `deals` table columns are written.
 - **Tags on other records.** Tags exist only on contacts (`contacts.tags`; no tag column on companies/deals in `schemas/01_tables.sql`).
 - **Lost reason / stage history.** A deal lost-reason column was added then dropped (`supabase/migrations/20260924120000_deals_lost_reason.sql`, `20260928120000_drop_deals_lost_reason.sql`); no stage-change history is kept.
 - **Custom fields via UI.** Adding fields requires schema, view, import/export and merge code changes (`AGENTS.md` "Adding Custom Fields").

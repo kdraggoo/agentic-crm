@@ -6,14 +6,17 @@ import {
   useDataProvider,
   useGetIdentity,
   useListContext,
+  useNotify,
   useRedirect,
   type GetListResult,
 } from "ra-core";
+import { useRef } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 import { FormToolbar } from "../layout/FormToolbar";
 import type { Deal } from "../types";
 import { DealInputs } from "./DealInputs";
+import { saveLineItems, type LineItemInput } from "./lineItemsUtils";
 
 export const DealCreate = ({ open }: { open: boolean }) => {
   const redirect = useRedirect();
@@ -26,7 +29,19 @@ export const DealCreate = ({ open }: { open: boolean }) => {
 
   const queryClient = useQueryClient();
 
+  // Ref to capture line items from form before submission
+  const lineItemsRef = useRef<LineItemInput[]>([]);
+
+  const notify = useNotify();
+
   const onSuccess = async (deal: Deal) => {
+    // Save line items captured from form state (not from server response)
+    try {
+      await saveLineItems(dataProvider, deal.id, lineItemsRef.current);
+    } catch {
+      notify("resources.deal_products.sync_error", { type: "error" });
+    }
+
     if (!allDeals) {
       redirect("/deals");
       return;
@@ -75,7 +90,17 @@ export const DealCreate = ({ open }: { open: boolean }) => {
   return (
     <Dialog open={open} onOpenChange={() => handleClose()}>
       <DialogContent className="lg:max-w-4xl overflow-y-auto max-h-9/10 top-1/20 translate-y-0">
-        <CreateBase resource="deals" mutationOptions={{ onSuccess }}>
+        <CreateBase
+          resource="deals"
+          mutationOptions={{ onSuccess }}
+          transform={(data: Record<string, unknown>) => {
+            // Capture line items before stripping them from the deal payload
+            lineItemsRef.current =
+              (data.line_items as LineItemInput[] | undefined) ?? [];
+            const { line_items: _, ...dealData } = data;
+            return dealData;
+          }}
+        >
           <CreateHeader />
           <Form
             defaultValues={{
