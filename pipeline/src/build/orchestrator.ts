@@ -39,6 +39,7 @@ import {
 import {
   amendTests,
   existingTests,
+  TestLintError,
   writeTests,
   type LockedTests,
 } from "./tests.js";
@@ -94,6 +95,26 @@ export type BuildOutcome =
  * the reviewer agent and GitHub CI all pass.
  */
 export async function buildIdea(request: BuildRequest): Promise<BuildOutcome> {
+  try {
+    return await buildWithTests(request);
+  } catch (error: unknown) {
+    if (!(error instanceof TestLintError)) throw error;
+    return {
+      branch: error.branch,
+      worktree: error.dir,
+      costUsd: error.costUsd,
+      ok: false,
+      reason: [
+        `The test agent's \`${error.testFile}\` still has lint errors after auto-fix and one more run to fix them, so it wasn't committed:`,
+        "```",
+        error.lintOutput,
+        "```",
+      ].join("\n"),
+    };
+  }
+}
+
+async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
   const { issueNumber, spec, progress } = request;
   let costUsd = 0;
   let locked: LockedTests;

@@ -19,6 +19,7 @@ const FILE_TOOLS = ["Read", "Grep", "Glob", "Edit", "Write"];
 const TEST_AGENT_COMMANDS = [
   "Bash(npm run build:demo)",
   "Bash(npx playwright test:*)",
+  "Bash(npx eslint:*)",
   "Bash(npx prettier:*)",
 ];
 

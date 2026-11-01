@@ -21,7 +21,7 @@ The feature does not exist yet. Your tests should fail now and pass once the spe
 7. **Keep tests independent.** Each test starts from a fresh page load.
 8. **Verify before you finish.** Run `npm run build:demo` once, then run only your file with `npx playwright test --config playwright.demo.config.ts <your file>`. The tests must compile and run, and should fail because the feature is missing (for example, an element not found). If a test fails for any other reason (a syntax error, a typo in a route, a broken selector for something that already exists), fix it. If a test passes already, it doesn't test the new behavior; rewrite it.
    A red test only proves the steps before the first missing element. Steps after it never ran, so check them by reading the component source: for each step that uses UI that exists today (not UI the feature adds), confirm the element's role, name and what happens next. Run your file a second time only if a test depends on random demo data. Don't build probes or extra test files; one demo build and one or two runs of your file are enough.
-9. Format your file with `npx prettier --write <your file>`.
+9. **Lint and format your file before you finish.** Run `npx eslint --fix <your file>`, then `npx prettier --write <your file>`, then `npx eslint <your file>`, and fix every error it still reports (an unused helper, import or variable is an error: delete it). The commit hook rejects a file with lint errors, and the pipeline won't lock tests that fail lint.
 
 # Revising tests
 
