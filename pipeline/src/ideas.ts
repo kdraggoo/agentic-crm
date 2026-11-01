@@ -93,6 +93,9 @@ const STATUS_LABELS: Record<
   },
 };
 
+/** First line of the comment a failed build leaves on its issue. */
+export const BUILD_FAILED_HEADING = "❌ The build didn't pass.";
+
 const STATE_PATTERN = /<!-- pipeline-state:([A-Za-z0-9+/=]+) -->/;
 
 interface StoredState {
@@ -212,6 +215,23 @@ export class IdeaStore {
       body,
     });
     return data.html_url;
+  }
+
+  /** The reason given in the idea's latest "build didn't pass" comment, if any. */
+  async lastBuildFailure(issueNumber: number): Promise<string | undefined> {
+    const comments = await this.octokit.paginate(
+      this.octokit.issues.listComments,
+      { ...this.repo, issue_number: issueNumber, per_page: 100 },
+    );
+    const body = comments
+      .map((comment) => comment.body ?? "")
+      .filter((text) => text.startsWith(BUILD_FAILED_HEADING))
+      .at(-1);
+    if (!body) return undefined;
+    return body
+      .slice(BUILD_FAILED_HEADING.length)
+      .replace(/\n+Work so far is in the local worktree[\s\S]*$/, "")
+      .trim();
   }
 
   async pullRequest(url: string): Promise<PullRequestState> {

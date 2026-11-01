@@ -58,6 +58,11 @@ export interface BuildRequest {
    * starting over (for retrying the build agent, e.g. with another model).
    */
   reuseTests?: boolean;
+  /**
+   * Continue a failed build from its kept worktree: the same tests, the build agent's
+   * uncommitted work, and the problem that stopped it as context.
+   */
+  continueFailed?: { lastFailure?: string };
   /** Continue a build that paused on test disputes, with the human's decision. */
   resume?: { disputes: TestDispute[]; decision: "accepted" | "rejected" };
   /**
@@ -158,6 +163,15 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
       "The owner tried the demo of your previous build and asked for changes. The spec above is the revised version, and the test agent updated the locked tests to match it. Your previous implementation is in the working tree: change it to fit the revised spec, and keep what the revision doesn't touch.",
       "The owner's feedback:",
       ...feedback,
+    ].join("\n\n");
+  } else if (request.continueFailed) {
+    locked = await existingTests(issueNumber, request.title, {
+      keepWork: true,
+    });
+    const { lastFailure } = request.continueFailed;
+    previousFailure = [
+      "Your previous build didn't pass and was stopped. Your changes are still in the working tree: review them and continue from them rather than starting over.",
+      ...(lastFailure ? ["The problem that stopped it:", lastFailure] : []),
     ].join("\n\n");
   } else if (request.reuseTests) {
     await progress("♻️ Reusing the committed acceptance tests…");

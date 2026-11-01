@@ -28,6 +28,7 @@ import { formatCiResult } from "./build/ci.js";
 import { removeWorktree } from "./build/git.js";
 import { buildIdea, type BuildRequest } from "./build/orchestrator.js";
 import {
+  BUILD_FAILED_HEADING,
   IdeaStore,
   builtVersion,
   latestPoTurn,
@@ -60,6 +61,9 @@ const MERGE_SYNC_MS = 10 * 60_000;
 /** Replies to a paused build's test disputes. */
 const ACCEPT_PATTERN = /^(accept|accepted|agree|fix (the )?tests?)[.!]?$/i;
 const REJECT_PATTERN = /^(reject|rejected|keep (the )?tests?)[.!]?$/i;
+
+/** Replies that continue a failed build from its kept work. */
+const CONTINUE_PATTERN = /^(continue|resume|keep going)[.!]?$/i;
 
 /** Statuses from which an approval starts a build. */
 const BUILDABLE: ReadonlySet<IdeaStatus> = new Set([
@@ -164,9 +168,13 @@ client.on(Events.MessageCreate, (message) => {
     const text = message.content.trim();
     const disputes = idea.disputes ?? [];
     if (ACCEPT_PATTERN.test(text)) {
-      void startBuild(thread, idea, { disputes, decision: "accepted" });
+      void startBuild(thread, idea, {
+        resume: { disputes, decision: "accepted" },
+      });
     } else if (REJECT_PATTERN.test(text)) {
-      void startBuild(thread, idea, { disputes, decision: "rejected" });
+      void startBuild(thread, idea, {
+        resume: { disputes, decision: "rejected" },
+      });
     } else {
       void thread.send(
         "The build is paused on a test dispute. Reply **accept** to have the test agent correct those tests, or **reject** to keep the tests as written.",
@@ -179,6 +187,13 @@ client.on(Events.MessageCreate, (message) => {
     APPROVAL_PATTERN.test(message.content.trim())
   ) {
     void startBuild(thread, idea);
+    return;
+  }
+  if (
+    idea.status === "build-failed" &&
+    CONTINUE_PATTERN.test(message.content.trim())
+  ) {
+    void startBuild(thread, idea, { continueFailed: true });
     return;
   }
   queueReply(thread, message);
@@ -303,8 +318,9 @@ async function runRound(
 function startBuild(
   thread: AnyThreadChannel,
   idea: Idea,
-  resume?: BuildRequest["resume"],
+  options: { resume?: BuildRequest["resume"]; continueFailed?: boolean } = {},
 ): Promise<void> {
+  const { resume, continueFailed } = options;
   const spec = latestSpec(idea);
   if (!spec) {
     return thread.send("There's no spec to build yet.").then(() => undefined);
@@ -313,7 +329,11 @@ function startBuild(
   // A revised spec for an idea with an open pull request updates that pull request.
   const built = builtVersion(idea);
   const revise =
-    !resume && idea.status === "spec-ready" && built && idea.pullRequestUrl
+    !resume &&
+    !continueFailed &&
+    idea.status === "spec-ready" &&
+    built &&
+    idea.pullRequestUrl
       ? { previousSpec: built.spec, feedback: built.feedback }
       : undefined;
   // Mark it immediately so a second approval while queued doesn't start another build.
@@ -331,15 +351,20 @@ function startBuild(
       await thread.send(
         resume
           ? `▶️ Resuming the build (disputes ${resume.decision}).`
-          : revising
-            ? "🚀 Approved. Updating the tests and the pull request to the revised spec; this usually takes 30–60 minutes."
-            : "🚀 Approved. Starting the build; this usually takes 30–60 minutes.",
+          : continueFailed
+            ? "▶️ Continuing the failed build from its kept work, with the problem that stopped it."
+            : revising
+              ? "🚀 Approved. Updating the tests and the pull request to the revised spec; this usually takes 30–60 minutes."
+              : "🚀 Approved. Starting the build; this usually takes 30–60 minutes.",
       );
       const outcome = await buildIdea({
         issueNumber: idea.issueNumber,
         title: idea.title,
         spec,
         resume,
+        continueFailed: continueFailed
+          ? { lastFailure: await store.lastBuildFailure(idea.issueNumber) }
+          : undefined,
         revise: revising,
         progress: async (line) => {
           for (const chunk of chunkForDiscord(line)) await thread.send(chunk);
@@ -420,11 +445,11 @@ async function reportOutcome(
   idea.status = "build-failed";
   if (outcome.ok === false) {
     return [
-      "❌ The build didn't pass.",
+      BUILD_FAILED_HEADING,
       "",
       outcome.reason,
       "",
-      `Work so far is in the local worktree \`${outcome.worktree}\` (branch \`${outcome.branch}\`). Reply **approve** to try again from scratch, or reply with changes to revise the spec.`,
+      `Work so far is in the local worktree \`${outcome.worktree}\` (branch \`${outcome.branch}\`). Reply **continue** to keep going from this work, **approve** to start over from scratch, or reply with changes to revise the spec.`,
     ].join("\n");
   }
   return "The build stopped after writing tests only.";
