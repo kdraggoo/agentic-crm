@@ -10,6 +10,7 @@ import {
   type TestReport,
 } from "./agents.js";
 import { generateRegistry, runChecks } from "./checks.js";
+import { restoreDemoConfig } from "./guardrails.js";
 import {
   failuresOnlyIn,
   rerunFailedJobs,
@@ -225,6 +226,14 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
         previousFailure = `You modified the locked test file ${testFile}. It has been restored. Make the implementation satisfy the test as written, or report a test dispute.`;
         continue;
       }
+    }
+    const restoredConfig = await restoreDemoConfig(dir, testCommit, changed);
+    if (restoredConfig.length > 0) {
+      await progress(
+        `↩️ Restored the demo setup the build agent changed: ${restoredConfig.join(", ")}`,
+      );
+      previousFailure = `You changed how the demo runs (${restoredConfig.join(", ")}); it has been restored. The demo's network latency is deliberate: the tests and the app must work at that pace. If something only passes without it, fix the timing in the app (wait for data, avoid redundant requests), or report a test dispute if a locked test acts before the page has loaded.`;
+      continue;
     }
     if (report.status === "test_dispute" || report.test_disputes.length > 0) {
       // Pause for a human: the work stays uncommitted in the worktree.
