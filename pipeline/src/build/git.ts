@@ -39,11 +39,7 @@ export async function createWorktree(
   await runOrThrow("git", ["fetch", "--quiet", "origin", "main"], {
     cwd: REPO_DIR,
   });
-  if (existsSync(dir)) {
-    await runOrThrow("git", ["worktree", "remove", "--force", dir], {
-      cwd: REPO_DIR,
-    });
-  }
+  if (existsSync(dir)) await deleteWorktree(dir);
   await runOrThrow(
     "git",
     ["worktree", "add", "--quiet", "-B", branch, dir, "origin/main"],
@@ -58,17 +54,33 @@ export async function removeWorktree(
   title: string,
 ): Promise<void> {
   const dir = path.join(WORKTREES_DIR, `idea-${issueNumber}`);
-  if (existsSync(dir)) {
-    await runOrThrow("git", ["worktree", "remove", "--force", dir], {
-      cwd: REPO_DIR,
-    });
-  }
+  if (existsSync(dir)) await deleteWorktree(dir);
   await run("git", ["branch", "-D", branchName(issueNumber, title)], {
     cwd: REPO_DIR,
   });
   await rm(path.join(WORKTREES_DIR, `idea-${issueNumber}.test-report.json`), {
     force: true,
   });
+}
+
+/**
+ * Deletes a worktree folder and git's record of it. `git worktree remove` gives up at
+ * the first folder it can't empty, e.g. when macOS writes a .DS_Store into it
+ * mid-delete, or when the folder is no longer a registered worktree. The rest is then
+ * deleted with retries, and the stale record pruned.
+ */
+async function deleteWorktree(dir: string): Promise<void> {
+  const removed = await run("git", ["worktree", "remove", "--force", dir], {
+    cwd: REPO_DIR,
+  });
+  if (removed.code === 0) return;
+  await rm(dir, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 200,
+  });
+  await runOrThrow("git", ["worktree", "prune"], { cwd: REPO_DIR });
 }
 
 /**
