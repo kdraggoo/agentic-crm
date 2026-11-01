@@ -356,6 +356,43 @@ export const frenchCrmMessages = {
       regarding_contact: "(Concernant : %{name})",
       updated: "Tâche mise à jour",
     },
+    products: {
+      name: "Produit |||| Produits",
+      fields: {
+        name: "Nom",
+        sku: "SKU",
+        category: "Catégorie",
+        unit_price: "Prix unitaire",
+        description: "Description",
+        is_archived: "Archivé",
+      },
+      action: {
+        create: "Ajouter un produit",
+        edit: "Modifier",
+        archive: "Archiver",
+        unarchive: "Désarchiver",
+      },
+      empty: "Aucun produit pour le moment.",
+      archived_section: "Archivés",
+      search_placeholder: "Rechercher des produits…",
+      delete_error:
+        "Impossible de supprimer ce produit car il est utilisé dans des offres existantes.",
+    },
+    deal_products: {
+      name: "Ligne |||| Lignes",
+      fields: {
+        product_id: "Produit",
+        quantity: "Quantité",
+        unit_price: "Prix unitaire",
+        line_total: "Total",
+      },
+      section_title: "Lignes de produits",
+      add: "Ajouter une ligne",
+      remove: "Supprimer",
+      line_items_total: "Total des lignes",
+      sync_error:
+        "Échec de l'enregistrement des lignes. Veuillez rouvrir l'offre et réessayer.",
+    },
     tags: {
       name: "Étiquette |||| Étiquettes",
       action: {

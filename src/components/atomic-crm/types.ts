@@ -228,6 +228,28 @@ export interface LabeledValue {
   label: string;
 }
 
+export type Product = {
+  name: string;
+  sku: string;
+  category: string;
+  unit_price: number;
+  description: string;
+  is_archived: boolean;
+  sales_id?: Identifier;
+  created_at: string;
+  updated_at: string;
+} & Pick<RaRecord, "id">;
+
+export type DealProduct = {
+  deal_id: Identifier;
+  product_id: Identifier;
+  quantity: number;
+  unit_price: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+} & Pick<RaRecord, "id">;
+
 export type DealStage = LabeledValue;
 
 export interface NoteStatus extends LabeledValue {

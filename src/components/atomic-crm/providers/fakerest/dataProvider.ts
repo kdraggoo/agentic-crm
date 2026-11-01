@@ -14,6 +14,7 @@ import type {
   ContactNote,
   Deal,
   DealNote,
+  Product,
   Sale,
   SalesFormData,
   SearchResourceName,
@@ -662,6 +663,38 @@ export const createDataProvider = ({
         resource: "deal_notes",
         beforeSave: async (params) => preserveAttachmentMimeType(params),
       } satisfies ResourceCallbacks<DealNote>,
+      {
+        resource: "products",
+        beforeCreate: async (params) => ({
+          ...params,
+          data: {
+            ...params.data,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        }),
+        beforeUpdate: async (params) => ({
+          ...params,
+          data: {
+            ...params.data,
+            updated_at: new Date().toISOString(),
+          },
+        }),
+        beforeDelete: async (params) => {
+          // Prevent hard-delete while any deal still references the product
+          const { data: refs } = await dataProvider.getList("deal_products", {
+            filter: { product_id: params.id },
+            pagination: { page: 1, perPage: 1 },
+            sort: { field: "id", order: "ASC" },
+          });
+          if (refs.length > 0) {
+            throw new Error(
+              "Cannot delete product: it is still referenced by deal line items. Archive it instead.",
+            );
+          }
+          return params;
+        },
+      } satisfies ResourceCallbacks<Product>,
     ],
   ) as CrmDataProvider;
 

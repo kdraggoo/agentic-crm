@@ -152,6 +152,10 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/settings/SettingsProducts.tsx",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/settings/SettingsPageMobile.tsx",
           "type": "registry:component"
         },
@@ -161,6 +165,10 @@
         },
         {
           "path": "src/components/atomic-crm/settings/ProfilePage.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/settings/ProductDialog.tsx",
           "type": "registry:component"
         },
         {
@@ -304,6 +312,10 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/providers/fakerest/dataGenerator/products.ts",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/providers/fakerest/dataGenerator/index.ts",
           "type": "registry:component"
         },
@@ -313,6 +325,10 @@
         },
         {
           "path": "src/components/atomic-crm/providers/fakerest/dataGenerator/deals.ts",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/providers/fakerest/dataGenerator/dealProducts.ts",
           "type": "registry:component"
         },
         {
@@ -604,6 +620,10 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/deals/lineItemsUtils.ts",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/deals/index.ts",
           "type": "registry:component"
         },
@@ -637,6 +657,14 @@
         },
         {
           "path": "src/components/atomic-crm/deals/DealList.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/deals/DealLineItemsInput.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/deals/DealLineItems.tsx",
           "type": "registry:component"
         },
         {

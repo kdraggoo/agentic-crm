@@ -9,7 +9,7 @@ import {
   useNotify,
   useTranslate,
 } from "ra-core";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useFormContext } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,9 +27,11 @@ import {
   type ConfigurationContextValue,
 } from "../root/ConfigurationContext";
 import { defaultConfiguration } from "../root/defaultConfiguration";
+import { SettingsProducts } from "./SettingsProducts";
 import { SettingsTags } from "./SettingsTags";
 
-const SECTIONS = [
+/** Sections that share the main settings form (plus Tags, which is inline). */
+const FORM_SECTIONS = [
   {
     id: "branding",
     label: "crm.settings.sections.branding",
@@ -45,6 +47,17 @@ const SECTIONS = [
   { id: "tasks", label: "resources.tasks.name", fallback: "Tasks" },
   { id: "tags", label: "resources.tags.name", fallback: "Tags" },
 ];
+
+/** Standalone sections rendered outside the form tree (Products). */
+const STANDALONE_SECTIONS = [
+  {
+    id: "products",
+    label: "resources.products.name",
+    fallback: "Products",
+  },
+];
+
+const ALL_SECTIONS = [...FORM_SECTIONS, ...STANDALONE_SECTIONS];
 
 /** Ensure every item in a { value, label } array has a value (slug from label). */
 const ensureValues = (items: { value?: string; label: string }[] | undefined) =>
@@ -163,6 +176,7 @@ SettingsPage.path = "/settings";
 
 const SettingsForm = () => {
   const config = useConfigurationContext();
+  const [activeSection, setActiveSection] = useState<string | null>(null);
 
   const defaultValues = useMemo(
     () => ({
@@ -180,14 +194,108 @@ const SettingsForm = () => {
     [config],
   );
 
+  const isStandalone =
+    activeSection != null && STANDALONE_IDS.has(activeSection);
+
   return (
-    <Form defaultValues={defaultValues}>
-      <SettingsFormFields />
-    </Form>
+    <>
+      {/*
+       * Standalone sections are rendered outside the Form tree so that
+       * form resets (triggered by EditBase loading) never cascade into
+       * their component subtree. This prevents dialog DOM nodes from
+       * being destabilised mid-interaction.
+       */}
+      {isStandalone && (
+        <StandaloneWrapper
+          activeSection={activeSection}
+          setActiveSection={setActiveSection}
+        />
+      )}
+      <Form defaultValues={defaultValues}>
+        <SettingsFormFields
+          activeSection={activeSection}
+          setActiveSection={setActiveSection}
+        />
+      </Form>
+    </>
   );
 };
 
-const SettingsFormFields = () => {
+const STANDALONE_IDS = new Set(STANDALONE_SECTIONS.map((s) => s.id));
+
+interface SettingsSectionNavProps {
+  activeSection: string | null;
+  setActiveSection: (section: string | null) => void;
+}
+
+/**
+ * Navigation sidebar shared by both the form and standalone layouts.
+ */
+const SettingsSectionNav = ({ setActiveSection }: SettingsSectionNavProps) => {
+  const translate = useTranslate();
+
+  const handleSectionClick = (sectionId: string) => {
+    if (STANDALONE_IDS.has(sectionId)) {
+      setActiveSection(sectionId);
+    } else {
+      setActiveSection(null);
+      requestAnimationFrame(() => {
+        document
+          .getElementById(sectionId)
+          ?.scrollIntoView({ behavior: "smooth" });
+      });
+    }
+  };
+
+  return (
+    <nav className="hidden md:block w-48 shrink-0">
+      <div className="sticky top-4 space-y-1">
+        <h1 className="text-2xl font-semibold px-3 mb-2">
+          {translate("crm.settings.title")}
+        </h1>
+        {ALL_SECTIONS.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            onClick={() => handleSectionClick(section.id)}
+            className="block w-full text-left px-3 py-1 text-sm rounded-md hover:text-foreground hover:bg-muted transition-colors"
+          >
+            {translate(section.label, { smart_count: 2 })}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+};
+
+/**
+ * Renders standalone sections (Tags, Products) completely outside the
+ * react-hook-form tree so that form resets never cascade into their subtree.
+ */
+const StandaloneWrapper = ({
+  activeSection,
+  setActiveSection,
+}: SettingsSectionNavProps) => (
+  <div className="flex gap-8 mt-4 pb-20">
+    <SettingsSectionNav
+      activeSection={activeSection}
+      setActiveSection={setActiveSection}
+    />
+    <div className="flex-1 min-w-0 max-w-2xl space-y-6">
+      {activeSection === "products" && <SettingsProducts />}
+    </div>
+  </div>
+);
+
+interface SettingsFormFieldsProps {
+  activeSection: string | null;
+  setActiveSection: (section: string | null) => void;
+}
+
+const SettingsFormFields = ({
+  activeSection,
+  setActiveSection,
+}: SettingsFormFieldsProps) => {
   const translate = useTranslate();
   const currencyChoices = useMemo(() => getCurrencyChoices(), []);
   const {
@@ -244,30 +352,22 @@ const SettingsFormFields = () => {
     [categoryDisplayName, deals, translate],
   );
 
+  const isStandalone =
+    activeSection != null && STANDALONE_IDS.has(activeSection);
+
+  // When a standalone section is active, the entire form tree is hidden
+  // and the StandaloneWrapper (rendered outside <Form>) takes over.
+  if (isStandalone) {
+    return null;
+  }
+
   return (
     <div className="flex gap-8 mt-4 pb-20">
       {/* Left navigation */}
-      <nav className="hidden md:block w-48 shrink-0">
-        <div className="sticky top-4 space-y-1">
-          <h1 className="text-2xl font-semibold px-3 mb-2">
-            {translate("crm.settings.title")}
-          </h1>
-          {SECTIONS.map((section) => (
-            <button
-              key={section.id}
-              type="button"
-              onClick={() => {
-                document
-                  .getElementById(section.id)
-                  ?.scrollIntoView({ behavior: "smooth" });
-              }}
-              className="block w-full text-left px-3 py-1 text-sm rounded-md hover:text-foreground hover:bg-muted transition-colors"
-            >
-              {translate(section.label, { smart_count: 2 })}
-            </button>
-          ))}
-        </div>
-      </nav>
+      <SettingsSectionNav
+        activeSection={activeSection}
+        setActiveSection={setActiveSection}
+      />
 
       {/* Main content */}
       <div className="flex-1 min-w-0 max-w-2xl space-y-6">
@@ -463,7 +563,7 @@ const SettingsFormFields = () => {
           </CardContent>
         </Card>
 
-        {/* Tags */}
+        {/* Tags — inline card with its own save behavior (useTags) */}
         <SettingsTags />
       </div>
 
