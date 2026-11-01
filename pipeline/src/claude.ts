@@ -35,6 +35,17 @@ export class ClaudeTimeoutError extends Error {
 }
 
 /**
+ * The run ended without a structured report, e.g. because a later turn answered in
+ * plain text. Anything it changed on disk stays.
+ */
+export class ClaudeNoReportError extends Error {
+  constructor(readonly lastMessage: string) {
+    super(`claude finished without a structured report: ${lastMessage}`);
+    this.name = "ClaudeNoReportError";
+  }
+}
+
+/**
  * Runs Claude Code headlessly (`claude -p`) with a JSON schema and returns the
  * validated structured output. Uses whatever login the local `claude` CLI has,
  * so no API key is needed on a machine where Claude Code is signed in.
@@ -67,7 +78,13 @@ export function runClaude<T extends z.ZodTypeAny>(
   return new Promise((resolve, reject) => {
     const child = spawn("claude", args, {
       cwd: options.cwd,
-      env: { ...process.env, ...options.env },
+      env: {
+        ...process.env,
+        ...options.env,
+        // A background task that finishes after the agent reported wakes it for another
+        // turn, and the envelope then holds that turn, without the structured report.
+        CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1",
+      },
       stdio: ["pipe", "pipe", "pipe"],
       // Own process group, so a timeout also stops the test runners and browsers it started.
       detached: true,
@@ -94,6 +111,7 @@ export function runClaude<T extends z.ZodTypeAny>(
       try {
         resolve(parseResult(stdout, options.schema));
       } catch (error: unknown) {
+        if (error instanceof ClaudeNoReportError) return reject(error);
         const detail = stderr.trim() || stdout.trim().slice(0, 2000);
         const message = error instanceof Error ? error.message : String(error);
         reject(new Error(`${message} (exit code ${code}): ${detail}`));
@@ -121,6 +139,9 @@ function parseResult<T extends z.ZodTypeAny>(
   };
   if (result.is_error) {
     throw new Error(`claude reported an error: ${result.result ?? "unknown"}`);
+  }
+  if (result.structured_output === undefined) {
+    throw new ClaudeNoReportError((result.result ?? "").slice(0, 500));
   }
   const parsed = schema.safeParse(result.structured_output);
   if (!parsed.success) {

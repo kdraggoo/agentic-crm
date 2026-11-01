@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { TEST_TIMEOUT_MS, WORKTREES_DIR, buildEnv } from "../config.js";
-import { ClaudeTimeoutError } from "../claude.js";
+import { ClaudeNoReportError, ClaudeTimeoutError } from "../claude.js";
 import type { Spec } from "../po/schema.js";
 import { TestReportSchema, runTestAgent, type TestReport } from "./agents.js";
 import { installDependencies } from "./checks.js";
@@ -204,9 +204,9 @@ export async function amendTests(
 }
 
 /**
- * Runs the test agent, and once more if it runs out of time after drafting the
- * file: the draft is kept, everything else it touched is reverted, and the second
- * run is told to finish and report rather than start over.
+ * Runs the test agent, and once more if it runs out of time or ends without a report
+ * after drafting the file: the draft is kept, everything else it touched is reverted,
+ * and the second run is told to finish and report rather than start over.
  */
 async function runTestAgentWithRetry(
   dir: string,
@@ -218,21 +218,27 @@ async function runTestAgentWithRetry(
   try {
     return await runTestAgent(dir, spec, testFile, revision);
   } catch (error: unknown) {
-    if (!(error instanceof ClaudeTimeoutError)) throw error;
+    const timedOut = error instanceof ClaudeTimeoutError;
+    if (!timedOut && !(error instanceof ClaudeNoReportError)) throw error;
     const testPath = path.join(dir, testFile);
     const draft = await readFile(testPath, "utf8").catch(() => null);
     if (draft === null) throw error;
     await discardChanges(dir);
     await writeFile(testPath, draft);
     await progress(
-      "⏱️ The test agent ran out of time; one more run to finish its draft…",
+      timedOut
+        ? "⏱️ The test agent ran out of time; one more run to finish its draft…"
+        : "📝 The test agent finished without a report; one more run to report on its draft…",
     );
+    const why = timedOut
+      ? `was stopped after ${Math.round(TEST_TIMEOUT_MS / 60_000)} minutes, before it reported`
+      : "ended without returning its structured report";
     return runTestAgent(
       dir,
       spec,
       testFile,
       revision,
-      `A previous run drafted \`${testFile}\` but was stopped after ${Math.round(TEST_TIMEOUT_MS / 60_000)} minutes, before it reported. The draft is in the working tree; everything else it changed was reverted. Don't start over: review the draft, fix what's wrong, run it against the demo build once, and report. Keep verification short.`,
+      `A previous run drafted \`${testFile}\` but ${why}. The draft is in the working tree; everything else it changed was reverted. Don't start over: review the draft, fix what's wrong, run it against the demo build once, and report. Keep verification short.`,
     );
   }
 }
@@ -268,7 +274,11 @@ async function lintWithOneFix(
       ].join("\n"),
     ));
   } catch (error: unknown) {
-    if (!(error instanceof ClaudeTimeoutError)) throw error;
+    // The file is linted again below either way, so a run that stops early is no worse.
+    const stoppedEarly =
+      error instanceof ClaudeTimeoutError ||
+      error instanceof ClaudeNoReportError;
+    if (!stoppedEarly) throw error;
   }
   return { errors: await lintTestFile(dir, testFile), costUsd };
 }
