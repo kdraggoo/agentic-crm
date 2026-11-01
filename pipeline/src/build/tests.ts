@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { TEST_TIMEOUT_MS, WORKTREES_DIR } from "../config.js";
+import { TEST_TIMEOUT_MS, WORKTREES_DIR, buildEnv } from "../config.js";
 import { ClaudeTimeoutError } from "../claude.js";
 import type { Spec } from "../po/schema.js";
 import { TestReportSchema, runTestAgent, type TestReport } from "./agents.js";
@@ -16,7 +16,7 @@ import {
   restorePaths,
   unpark,
 } from "./git.js";
-import { runOrThrow } from "./run.js";
+import { run, runOrThrow, tail } from "./run.js";
 
 /** The locked acceptance tests a build works against. */
 export interface LockedTests {
@@ -30,6 +30,23 @@ export interface LockedTests {
 }
 
 type Progress = (message: string) => Promise<void>;
+
+/**
+ * The test file still has lint errors after the pipeline's auto-fix and one more
+ * test-agent run. Carries where the work is, so the build can fail with a report
+ * instead of an unexpected error.
+ */
+export class TestLintError extends Error {
+  constructor(
+    readonly dir: string,
+    readonly branch: string,
+    readonly testFile: string,
+    readonly lintOutput: string,
+    readonly costUsd: number,
+  ) {
+    super(`Lint errors remain in ${testFile}:\n${lintOutput}`);
+  }
+}
 
 const ADD_PREFIX = "Add acceptance tests for #";
 const AMEND_PREFIX = "Amend acceptance tests for #";
@@ -57,6 +74,16 @@ export async function writeTests(
   const testFile = testFileFor(issueNumber);
   await progress("🧪 Test agent is writing acceptance tests from the spec…");
   const tests = await runTestAgentWithRetry(dir, spec, testFile, progress);
+  const lint = await lintWithOneFix(dir, spec, testFile, progress);
+  if (lint.errors) {
+    throw new TestLintError(
+      dir,
+      branch,
+      testFile,
+      lint.errors,
+      tests.costUsd + lint.costUsd,
+    );
+  }
   const testCommit = await keepOnlyTestFile(
     dir,
     testFile,
@@ -72,7 +99,7 @@ export async function writeTests(
     testFile,
     testCommit,
     testReport: tests.report,
-    costUsd: tests.costUsd,
+    costUsd: tests.costUsd + lint.costUsd,
   };
 }
 
@@ -145,6 +172,19 @@ export async function amendTests(
     progress,
     revision,
   );
+  const lint = await lintWithOneFix(dir, spec, testFile, progress);
+  if (lint.errors) {
+    // Put the worktree back as it was: the locked tests, with the build agent's work uncommitted.
+    await discardChanges(dir);
+    await unpark(dir, parked);
+    throw new TestLintError(
+      dir,
+      locked.branch,
+      testFile,
+      lint.errors,
+      tests.costUsd + lint.costUsd,
+    );
+  }
   const testCommit = await keepOnlyTestFile(
     dir,
     testFile,
@@ -159,7 +199,7 @@ export async function amendTests(
     ...locked,
     testCommit,
     testReport: tests.report,
-    costUsd: tests.costUsd,
+    costUsd: tests.costUsd + lint.costUsd,
   };
 }
 
@@ -195,6 +235,60 @@ async function runTestAgentWithRetry(
       `A previous run drafted \`${testFile}\` but was stopped after ${Math.round(TEST_TIMEOUT_MS / 60_000)} minutes, before it reported. The draft is in the working tree; everything else it changed was reverted. Don't start over: review the draft, fix what's wrong, run it against the demo build once, and report. Keep verification short.`,
     );
   }
+}
+
+/**
+ * Auto-fixes and formats the test file with the repo's own eslint and prettier, so the
+ * pre-commit hook accepts it. If eslint errors remain, the test agent gets one run to
+ * fix just those, keeping its draft. Returns the errors still left, if any.
+ */
+async function lintWithOneFix(
+  dir: string,
+  spec: Spec,
+  testFile: string,
+  progress: Progress,
+): Promise<{ errors?: string; costUsd: number }> {
+  const errors = await lintTestFile(dir, testFile);
+  if (!errors) return { costUsd: 0 };
+  await progress(
+    "🧹 The test file has lint errors; one more test-agent run to fix them…",
+  );
+  let costUsd = 0;
+  try {
+    // The report from this run is ignored: fixing lint doesn't change coverage.
+    ({ costUsd } = await runTestAgent(
+      dir,
+      spec,
+      testFile,
+      [
+        `\`${testFile}\` is written and verified, but eslint reports errors in it. Fix only these lint errors: don't change what any test does, don't rewrite the file, and don't build the demo or run the tests again. Run \`npx eslint ${testFile}\` to confirm they are gone, then report as before.`,
+        "```",
+        errors,
+        "```",
+      ].join("\n"),
+    ));
+  } catch (error: unknown) {
+    if (!(error instanceof ClaudeTimeoutError)) throw error;
+  }
+  return { errors: await lintTestFile(dir, testFile), costUsd };
+}
+
+/** Runs eslint --fix and prettier on the test file; returns eslint's remaining errors, if any. */
+async function lintTestFile(
+  dir: string,
+  testFile: string,
+): Promise<string | undefined> {
+  const bin = (name: string) => path.join(dir, "node_modules", ".bin", name);
+  const options = { cwd: dir, env: buildEnv(), timeoutMs: 5 * 60_000 };
+  // Errors eslint can't fix show up in the final check below.
+  await run(bin("eslint"), ["--fix", testFile], options);
+  await runOrThrow(
+    bin("prettier"),
+    ["--config", "./.prettierrc.json", "--write", testFile],
+    options,
+  );
+  const result = await run(bin("eslint"), [testFile], options);
+  return result.code === 0 ? undefined : tail(result.output, 40);
 }
 
 /** Commits the test file alone; anything else the test agent touched is discarded. */
