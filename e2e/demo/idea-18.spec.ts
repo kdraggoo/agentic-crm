@@ -318,15 +318,13 @@ test.describe("Products catalog and deal line items", () => {
       // resources.deals.fields.amount = "Budget")
       await expect(page.getByText("Budget")).toBeVisible();
 
-      const hasItems = await page
-        .getByText("Line items total")
-        .isVisible()
+      const hasItems = await expect(page.getByText("Line items total"))
+        .toBeVisible({ timeout: 5000 })
+        .then(() => true)
         .catch(() => false);
 
       if (hasItems) {
         foundLineItems = true;
-        // Verify the section is visible
-        await expect(page.getByText("Line items total")).toBeVisible();
         break;
       }
 
@@ -413,9 +411,9 @@ test.describe("Products catalog and deal line items", () => {
       // Wait for deal show dialog (Budget label)
       await expect(page.getByText("Budget")).toBeVisible();
 
-      const hasItems = await page
-        .getByText("Line items total")
-        .isVisible()
+      const hasItems = await expect(page.getByText("Line items total"))
+        .toBeVisible({ timeout: 5000 })
+        .then(() => true)
         .catch(() => false);
 
       if (hasItems) {
