@@ -95,11 +95,7 @@ export async function runReviewer(
     previousFindings?: ReviewFinding[];
   },
 ): Promise<{ review: Review; costUsd: number }> {
-  const diffLines = input.diff.split("\n");
-  const diff =
-    diffLines.length > MAX_DIFF_LINES
-      ? `${diffLines.slice(0, MAX_DIFF_LINES).join("\n")}\n[… ${diffLines.length - MAX_DIFF_LINES} more lines; read the files directly]`
-      : input.diff;
+  const diff = clipDiff(input.diff);
   const sections = [
     "Review this change.",
     input.task,
@@ -130,6 +126,14 @@ export async function runReviewer(
     timeoutMs: REVIEW_TIMEOUT_MS,
   });
   return { review: output, costUsd };
+}
+
+/** Keeps a diff within what a reviewer can read in one prompt. */
+export function clipDiff(diff: string): string {
+  const lines = diff.split("\n");
+  return lines.length > MAX_DIFF_LINES
+    ? `${lines.slice(0, MAX_DIFF_LINES).join("\n")}\n[… ${lines.length - MAX_DIFF_LINES} more lines; read the files directly]`
+    : diff;
 }
 
 export function formatFinding(finding: ReviewFinding): string {
