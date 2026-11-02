@@ -294,7 +294,9 @@ test.describe("Products catalog and deal line items", () => {
     await page.getByRole("option", { name: productName! }).click();
 
     // Both rows should show the same product name
-    const productCells = page.getByText(productName!, { exact: true });
+    const productCells = page
+      .locator('[data-slot="select-value"]')
+      .getByText(productName!, { exact: true });
     await expect(productCells).toHaveCount(2);
   });
 
