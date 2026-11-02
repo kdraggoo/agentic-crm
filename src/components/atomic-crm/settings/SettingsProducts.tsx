@@ -189,7 +189,7 @@ export const SettingsProducts = () => {
 
         {/* Column headers */}
         {(activeProducts.length > 0 || archivedProducts.length > 0) && (
-          <div className="grid grid-cols-[1fr_80px_100px_100px_auto] gap-2 text-xs text-muted-foreground font-medium px-1">
+          <div className="grid grid-cols-[1fr_80px_100px_100px_104px] gap-2 text-xs text-muted-foreground font-medium">
             <span>{translate("resources.products.fields.name")}</span>
             <span>{translate("resources.products.fields.sku")}</span>
             <span>{translate("resources.products.fields.category")}</span>
@@ -204,7 +204,7 @@ export const SettingsProducts = () => {
           return (
             <div
               key={product.id}
-              className="grid grid-cols-[1fr_80px_100px_100px_auto] gap-2 items-center text-sm"
+              className="grid grid-cols-[1fr_80px_100px_100px_104px] gap-2 items-center text-sm"
             >
               <span className="font-medium truncate">{product.name}</span>
               <span className="text-muted-foreground truncate">
@@ -263,7 +263,7 @@ export const SettingsProducts = () => {
               return (
                 <div
                   key={product.id}
-                  className="grid grid-cols-[1fr_80px_100px_100px_auto] gap-2 items-center text-sm opacity-60"
+                  className="grid grid-cols-[1fr_80px_100px_100px_104px] gap-2 items-center text-sm opacity-60"
                 >
                   <span className="font-medium truncate">{product.name}</span>
                   <span className="text-muted-foreground truncate">
