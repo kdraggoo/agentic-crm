@@ -8,6 +8,8 @@
  * - Replies to a built idea are feedback on its demo: the product owner revises the spec, and
  *   approving it updates the same PR. "merge" squash-merges the PR and closes the idea.
  * - The forum tag and the issue label track where each idea stands.
+ * - When GitHub CI fails on main, the bot opens a thread of its own and the fixer agent
+ *   prepares a fix PR; the owner merges it from that thread like any idea.
  * - Only the owner (DISCORD_OWNER_ID) is listened to: posts become instructions for agents that
  *   write code, so nobody else can submit, answer or approve.
  */
@@ -27,6 +29,7 @@ import { formatCheckResults } from "./build/checks.js";
 import { formatCiResult } from "./build/ci.js";
 import { removeWorktree } from "./build/git.js";
 import { buildIdea, type BuildRequest } from "./build/orchestrator.js";
+import { createFixFlow } from "./fix/discord.js";
 import {
   BUILD_FAILED_HEADING,
   IdeaStore,
@@ -101,6 +104,12 @@ const work = new Map<string, ThreadWork>();
 /** Builds run one at a time: they share the demo test port and a lot of CPU. */
 let buildQueue: Promise<void> = Promise.resolve();
 
+function enqueue(task: () => Promise<void>): Promise<void> {
+  const queued = buildQueue.then(task);
+  buildQueue = queued;
+  return queued;
+}
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -112,6 +121,16 @@ const client = new Client({
   partials: [Partials.Message, Partials.Reaction, Partials.Channel],
 });
 
+const fixes = createFixFlow({
+  client,
+  store,
+  ideas,
+  forumChannelId: FORUM_CHANNEL_ID,
+  enqueue,
+  applyStatusTag,
+  reportError,
+});
+
 client.once(Events.ClientReady, async (ready) => {
   await store.ensureLabels();
   for (const [threadId, idea] of await store.loadOpen())
@@ -120,14 +139,20 @@ client.once(Events.ClientReady, async (ready) => {
     `Logged in as ${ready.user.tag}. Watching forum ${FORUM_CHANNEL_ID}; ${ideas.size} open ideas loaded.`,
   );
   await syncMerged();
-  setInterval(() => void syncMerged(), MERGE_SYNC_MS);
+  void fixes.watchMain();
+  setInterval(() => {
+    void syncMerged();
+    void fixes.watchMain();
+  }, MERGE_SYNC_MS);
 });
 
 client.on(Events.ThreadCreate, async (thread, newlyCreated) => {
   if (
     !newlyCreated ||
     thread.parentId !== FORUM_CHANNEL_ID ||
-    ideas.has(thread.id)
+    ideas.has(thread.id) ||
+    // The bot opens threads itself for CI fixes.
+    thread.ownerId === client.user?.id
   )
     return;
   try {
@@ -157,6 +182,10 @@ client.on(Events.MessageCreate, (message) => {
     idea.status !== "test-dispute"
   ) {
     void mergeIdea(thread, idea);
+    return;
+  }
+  if (idea.fix) {
+    fixes.handleReply(thread, idea, message.content.trim());
     return;
   }
   if (idea.status === "in-review") {
@@ -209,7 +238,8 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
   if (!thread.isThread() || thread.parentId !== FORUM_CHANNEL_ID) return;
   if (message.author?.id !== client.user?.id) return;
   const idea = ideas.get(thread.id);
-  if (idea && BUILDABLE.has(idea.status)) void startBuild(thread, idea);
+  if (idea && !idea.fix && BUILDABLE.has(idea.status))
+    void startBuild(thread, idea);
 });
 
 async function handleNewIdea(thread: AnyThreadChannel): Promise<void> {
@@ -339,7 +369,7 @@ function startBuild(
   // Mark it immediately so a second approval while queued doesn't start another build.
   idea.status = "building";
   idea.disputes = undefined;
-  const queued = buildQueue.then(async () => {
+  return enqueue(async () => {
     try {
       await store.save(idea);
       await applyStatusTag(thread, "building");
@@ -393,8 +423,6 @@ function startBuild(
       await reportError(thread, error);
     }
   });
-  buildQueue = queued;
-  return queued;
 }
 
 /** Sets the idea's status from a build outcome and returns the message for the thread. */
