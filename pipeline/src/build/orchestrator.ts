@@ -37,9 +37,11 @@ import {
 import {
   amendTests,
   existingTests,
+  lockedTestFiles,
   TestLintError,
   writeTests,
   type LockedTests,
+  type TestRevision,
 } from "./tests.js";
 
 export interface BuildRequest {
@@ -132,11 +134,11 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
         locked,
         issueNumber,
         spec,
-        disputeRevision(locked.testFile, request.resume.disputes),
+        await disputeRevisions(locked, request.resume.disputes),
         progress,
       );
       previousFailure =
-        "A human accepted your test disputes and the test agent corrected those tests in a new commit; read the test file again. Your earlier changes are still in the working tree: continue from them.";
+        "A human accepted your test disputes and the test agent corrected those tests in new commits; read the disputed test files again. Your earlier changes are still in the working tree: continue from them.";
     } else {
       previousFailure = [
         "A human reviewed your test disputes and decided the tests stand as written:",
@@ -153,7 +155,12 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
       locked,
       issueNumber,
       spec,
-      specRevision(locked.testFile, previousSpec, feedback),
+      [
+        {
+          file: locked.testFile,
+          revision: specRevision(locked.testFile, previousSpec, feedback),
+        },
+      ],
       progress,
     );
     previousFailure = [
@@ -224,17 +231,19 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
       );
     }
 
-    const deleted = await deleteFiles(dir, report.deleted_files, [testFile]);
+    const lockedFiles = await lockedTestFiles(dir);
+    const deleted = await deleteFiles(dir, report.deleted_files, lockedFiles);
     if (deleted.length > 0) {
       await progress(
         `🗑️ Deleted at the build agent's request: ${deleted.join(", ")}`,
       );
     }
     const changed = await filesChangedSince(dir, testCommit);
-    if (changed.includes(testFile)) {
-      await restorePaths(dir, testCommit, [testFile]);
+    const touchedLocked = changed.filter((file) => lockedFiles.includes(file));
+    if (touchedLocked.length > 0) {
+      await restorePaths(dir, testCommit, touchedLocked);
       if (report.status !== "test_dispute") {
-        previousFailure = `You modified the locked test file ${testFile}. It has been restored. Make the implementation satisfy the test as written, or report a test dispute.`;
+        previousFailure = `You modified locked test files (${touchedLocked.join(", ")}). They have been restored. Make the implementation satisfy the tests as written, or report a test dispute.`;
         continue;
       }
     }
@@ -385,6 +394,7 @@ function ciDispute(test: string, ci: CiResult): TestDispute {
   const at = log.findIndex((line) => line.includes(test));
   return {
     test,
+    file: null,
     assumption:
       "The test passes against the local demo build but failed on GitHub CI twice, so it likely depends on timing: it acts before the page or form has finished loading, or expects state that a slower machine reaches later.",
     actual:
@@ -398,4 +408,30 @@ function ciDispute(test: string, ci: CiResult): TestDispute {
     proposed_change:
       "Make the test robust on a slower machine: before interacting, wait for a sign that the page's data has loaded (a field shows its saved value, a list shows its rows), and don't rely on timing.",
   };
+}
+
+/**
+ * The test agent's instructions for accepted disputes, one per test file: this idea's
+ * own, or an earlier idea's that the build agent named. A file that isn't a locked
+ * idea test file falls back to this idea's own.
+ */
+async function disputeRevisions(
+  locked: LockedTests,
+  disputes: TestDispute[],
+): Promise<TestRevision[]> {
+  const lockedFiles = await lockedTestFiles(locked.dir);
+  const byFile = new Map<string, TestDispute[]>();
+  for (const dispute of disputes) {
+    const file =
+      dispute.file && lockedFiles.includes(dispute.file)
+        ? dispute.file
+        : locked.testFile;
+    byFile.set(file, [...(byFile.get(file) ?? []), dispute]);
+  }
+  return [...byFile].map(([file, fileDisputes]) => ({
+    file,
+    revision: disputeRevision(file, fileDisputes, {
+      otherIdeasFile: file !== locked.testFile,
+    }),
+  }));
 }
