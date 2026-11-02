@@ -230,10 +230,10 @@ export interface LabeledValue {
 
 export type Product = {
   name: string;
-  sku: string;
-  category: string;
+  sku: string | null;
+  category: string | null;
   unit_price: number;
-  description: string;
+  description: string | null;
   is_archived: boolean;
   sales_id?: Identifier;
   created_at: string;

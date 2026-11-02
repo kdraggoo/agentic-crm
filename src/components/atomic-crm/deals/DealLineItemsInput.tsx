@@ -10,7 +10,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 
 import { useConfigurationContext } from "../root/ConfigurationContext";
@@ -20,8 +19,57 @@ import {
   clampUnitPrice,
   computeLineTotal,
   computeLineItemsTotal,
+  getProductLabel,
   type LineItemInput,
 } from "./lineItemsUtils";
+
+/**
+ * Displays the product name (or a placeholder / loading label) inside the
+ * Select trigger. Uses the same `data-slot="select-value"` attribute that
+ * Base UI's SelectValue renders, so existing selectors continue to work.
+ *
+ * This replaces SelectValue to avoid the raw numeric product ID being
+ * briefly shown before products finish loading. Base UI's SelectValue can
+ * only resolve labels from mounted SelectItem components, which aren't
+ * available until the popup opens for the first time.
+ */
+function ProductSelectLabel({
+  productId,
+  allProductsMap,
+  isLoading,
+  archivedLabel,
+  loadingLabel,
+  placeholderLabel,
+  unknownLabel,
+}: {
+  productId: string | undefined;
+  allProductsMap: Map<string, Product>;
+  isLoading: boolean;
+  archivedLabel: string;
+  loadingLabel: string;
+  placeholderLabel: string;
+  unknownLabel: string;
+}) {
+  let text: string;
+  if (!productId) {
+    text = isLoading ? loadingLabel : placeholderLabel;
+  } else if (isLoading) {
+    text = loadingLabel;
+  } else {
+    text =
+      getProductLabel(productId, allProductsMap, archivedLabel) ?? unknownLabel;
+  }
+
+  const isPlaceholder = !productId || isLoading;
+  return (
+    <span
+      data-slot="select-value"
+      className={`flex flex-1 text-left ${isPlaceholder ? "text-muted-foreground" : ""}`}
+    >
+      {text}
+    </span>
+  );
+}
 
 export const DealLineItemsInput = () => {
   const translate = useTranslate();
@@ -37,10 +85,11 @@ export const DealLineItemsInput = () => {
     useWatch({ control, name: "line_items" }) ?? EMPTY_LINE_ITEMS;
 
   // Fetch all products (including archived) so pre-filled rows can show their product
-  const { data: allProducts } = useGetList<Product>("products", {
-    pagination: { page: 1, perPage: 1000 },
-    sort: { field: "name", order: "ASC" },
-  });
+  const { data: allProducts, isLoading: isLoadingProducts } =
+    useGetList<Product>("products", {
+      pagination: { page: 1, perPage: 1000 },
+      sort: { field: "name", order: "ASC" },
+    });
 
   const activeProducts = useMemo(
     () => allProducts?.filter((p) => !p.is_archived) ?? [],
@@ -77,6 +126,14 @@ export const DealLineItemsInput = () => {
         minimumFractionDigits: 2,
       }),
     [currency],
+  );
+
+  const archivedLabel = translate("resources.products.fields.is_archived");
+  const loadingLabel = translate(
+    "resources.deal_products.fields.product_loading",
+  );
+  const unknownLabel = translate(
+    "resources.deal_products.fields.product_unknown",
   );
 
   const total = useMemo(() => computeLineItemsTotal(lineItems), [lineItems]);
@@ -117,7 +174,9 @@ export const DealLineItemsInput = () => {
               </Label>
               <Select
                 value={currentProductId}
-                onValueChange={(val) => handleProductChange(index, val)}
+                onValueChange={(val) =>
+                  handleProductChange(index, val as string)
+                }
               >
                 <SelectTrigger
                   aria-label={translate(
@@ -125,8 +184,14 @@ export const DealLineItemsInput = () => {
                   )}
                   className="w-full"
                 >
-                  <SelectValue
-                    placeholder={translate(
+                  <ProductSelectLabel
+                    productId={currentProductId}
+                    allProductsMap={allProductsMap}
+                    isLoading={isLoadingProducts}
+                    archivedLabel={archivedLabel}
+                    loadingLabel={loadingLabel}
+                    unknownLabel={unknownLabel}
+                    placeholderLabel={translate(
                       "resources.deal_products.fields.product_id",
                     )}
                   />
@@ -137,7 +202,6 @@ export const DealLineItemsInput = () => {
                       {p.name}
                     </SelectItem>
                   ))}
-                  {/* Show the currently-selected archived product so the user can see what was picked */}
                   {currentProductId &&
                     allProductsMap.get(currentProductId)?.is_archived && (
                       <SelectItem
@@ -145,8 +209,7 @@ export const DealLineItemsInput = () => {
                         value={currentProductId}
                         disabled
                       >
-                        {allProductsMap.get(currentProductId)?.name} (
-                        {translate("resources.products.fields.is_archived")})
+                        {`${allProductsMap.get(currentProductId)?.name} (${archivedLabel})`}
                       </SelectItem>
                     )}
                 </SelectContent>

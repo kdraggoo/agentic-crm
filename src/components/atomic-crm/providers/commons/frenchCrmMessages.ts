@@ -382,6 +382,8 @@ export const frenchCrmMessages = {
       name: "Ligne |||| Lignes",
       fields: {
         product_id: "Produit",
+        product_loading: "Chargement des produits…",
+        product_unknown: "Produit inconnu",
         quantity: "Quantité",
         unit_price: "Prix unitaire",
         line_total: "Total",

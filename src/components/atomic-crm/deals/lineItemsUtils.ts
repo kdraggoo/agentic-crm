@@ -1,12 +1,32 @@
 import type { DataProvider, Identifier } from "ra-core";
 
-import type { DealProduct } from "../types";
+import type { DealProduct, Product } from "../types";
 
 export interface LineItemInput {
   product_id: string | number;
   quantity: number;
   unit_price: number;
 }
+
+/**
+ * Resolves the display label for a product in the line item picker.
+ *
+ * Returns the product name (with an "(Archived)" suffix for archived
+ * products), or `undefined` when the product is unknown (e.g. products
+ * are still loading).
+ */
+export const getProductLabel = (
+  productId: string | undefined,
+  productsMap: Map<string, Product>,
+  archivedLabel: string,
+): string | undefined => {
+  if (!productId) return undefined;
+  const product = productsMap.get(productId);
+  if (!product) return undefined;
+  return product.is_archived
+    ? `${product.name} (${archivedLabel})`
+    : product.name;
+};
 
 /** Minimum allowed quantity (must be > 0). */
 const MIN_QUANTITY = 0.01;

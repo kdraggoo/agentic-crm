@@ -377,6 +377,8 @@ export const englishCrmMessages = {
       name: "Line item |||| Line items",
       fields: {
         product_id: "Product",
+        product_loading: "Loading products…",
+        product_unknown: "Unknown product",
         quantity: "Quantity",
         unit_price: "Unit price",
         line_total: "Total",

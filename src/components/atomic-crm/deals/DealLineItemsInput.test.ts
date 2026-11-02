@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import type { Product } from "../types";
 import {
   clampQuantity,
   clampUnitPrice,
   computeLineTotal,
   computeLineItemsTotal,
+  getProductLabel,
 } from "./lineItemsUtils";
 
 describe("clampQuantity", () => {
@@ -110,5 +112,58 @@ describe("computeLineItemsTotal", () => {
       { product_id: "1", quantity: 1, unit_price: 100 },
     ];
     expect(computeLineItemsTotal(items1)).toBe(computeLineItemsTotal(items2));
+  });
+});
+
+describe("getProductLabel", () => {
+  const makeProduct = (
+    overrides: { id: number; name: string } & Record<string, unknown>,
+  ): Product =>
+    ({
+      unit_price: 10,
+      sku: null,
+      category: null,
+      description: null,
+      is_archived: false,
+      created_at: "",
+      updated_at: "",
+      ...overrides,
+    }) as Product;
+
+  const buildMap = (products: Product[]): Map<string, Product> =>
+    new Map(products.map((p) => [String(p.id), p]));
+
+  it("returns the product name for an active product", () => {
+    const map = buildMap([makeProduct({ id: 1, name: "Widget" })]);
+    expect(getProductLabel("1", map, "Archived")).toBe("Widget");
+  });
+
+  it("returns product name with archived suffix for an archived product", () => {
+    const map = buildMap([
+      makeProduct({ id: 2, name: "Old Gadget", is_archived: true }),
+    ]);
+    expect(getProductLabel("2", map, "Archived")).toBe("Old Gadget (Archived)");
+  });
+
+  it("returns undefined when the product ID is not in the map", () => {
+    const map = buildMap([makeProduct({ id: 1, name: "Widget" })]);
+    expect(getProductLabel("999", map, "Archived")).toBeUndefined();
+  });
+
+  it("returns undefined when productId is undefined", () => {
+    const map = buildMap([makeProduct({ id: 1, name: "Widget" })]);
+    expect(getProductLabel(undefined, map, "Archived")).toBeUndefined();
+  });
+
+  it("returns undefined when the products map is empty", () => {
+    const map = new Map<string, Product>();
+    expect(getProductLabel("1", map, "Archived")).toBeUndefined();
+  });
+
+  it("uses the provided archived label text", () => {
+    const map = buildMap([
+      makeProduct({ id: 3, name: "Gadget", is_archived: true }),
+    ]);
+    expect(getProductLabel("3", map, "Archivé")).toBe("Gadget (Archivé)");
   });
 });
