@@ -153,9 +153,9 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **Related:** F-SET-02, F-SET-03, F-DEAL-07.
 
 ### F-DEAL-02 Deal search and filters
-- **What:** Always-on search (name, description, and category labels), filters by company and categories (any-of); admins get an account manager picker, non-admins an "Only deals I manage" switch.
-- **Where:** `crm/deals/DealList.tsx`, `OnlyMineInput.tsx`, `crm/sales/AccountManagerInput.tsx`, `crm/providers/supabase/searchDealCategories.ts`.
-- **Demo mode:** works.
+- **What:** Always-on search (name, description, and category labels), filters by company and categories (any-of); two date-range filters — "Expected closing date" and "Created date" — toggled via the FilterButton, each offering four preset buttons (This month, This quarter, Next month, Next quarter) and a Custom option with From/To date pickers; admins get an account manager picker, non-admins an "Only deals I manage" switch. Preset periods are computed at render time. The date range filters set `{source}@gte` / `{source}@lte` on the filter query. Date filters combine with other filters via AND.
+- **Where:** `crm/deals/DealList.tsx`, `DateRangeFilterInput.tsx`, `dateRangePresets.ts`, `OnlyMineInput.tsx`, `crm/sales/AccountManagerInput.tsx`, `crm/providers/supabase/searchDealCategories.ts`.
+- **Demo mode:** works (first 10 generated deals forced into current month/quarter so presets return results).
 
 ### F-DEAL-03 Create / edit deal
 - **What:** Modal dialog (routes `/deals/create`, `/deals/:id`): name (required), description, company, contacts (multi), categories (multi), amount, expected closing date (date only), stage, a "Propensity to buy" selector (Auto / Low / Medium / High; Auto = computed, F-DEAL-07), and a "Line items" section (F-PROD-02) for attaching products with quantity and editable unit price. A "Line items total" summary appears when items are present; the Budget (amount) field remains independent. New deals go to the top of their column.
