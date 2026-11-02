@@ -55,6 +55,22 @@ export function testFileFor(issueNumber: number): string {
   return `e2e/demo/idea-${issueNumber}.spec.ts`;
 }
 
+/** Every idea's locked acceptance test file committed in the worktree, this one's included. */
+export async function lockedTestFiles(dir: string): Promise<string[]> {
+  const output = await runOrThrow(
+    "git",
+    ["ls-files", "--", "e2e/demo/idea-*.spec.ts"],
+    { cwd: dir },
+  );
+  return output.split("\n").filter(Boolean);
+}
+
+/** One test file's revision: what the test agent should change in it. */
+export interface TestRevision {
+  file: string;
+  revision: string;
+}
+
 /** The test report is kept beside the worktree, so a later run can reuse the tests. */
 function testReportPath(issueNumber: number): string {
   return path.join(WORKTREES_DIR, `idea-${issueNumber}.test-report.json`);
@@ -115,9 +131,10 @@ export async function existingTests(
 ): Promise<LockedTests> {
   const { dir, branch } = existingWorktree(issueNumber, title);
   const testFile = testFileFor(issueNumber);
-  const last = await lastCommitTouching(dir, testFile);
-  const prefixes = [ADD_PREFIX, AMEND_PREFIX].map((p) => `${p}${issueNumber}:`);
-  if (!last || !prefixes.some((prefix) => last.subject.startsWith(prefix))) {
+  // An accepted dispute can amend an earlier idea's tests, so the latest commit to
+  // any idea's test file is the one nothing may change after.
+  const last = await lastCommitTouching(dir, "e2e/demo/");
+  if (!last || !isTestCommitFor(last.subject, issueNumber)) {
     throw new Error(
       `No committed acceptance tests for #${issueNumber} in ${dir}; run a fresh build.`,
     );
@@ -136,21 +153,33 @@ export async function existingTests(
   };
 }
 
+function isTestCommitFor(subject: string, issueNumber: number): boolean {
+  return [ADD_PREFIX, AMEND_PREFIX].some(
+    (prefix) =>
+      subject.startsWith(`${prefix}${issueNumber}:`) ||
+      subject.startsWith(`${prefix}${issueNumber} (`),
+  );
+}
+
 /**
- * Has the test agent revise the locked tests: correct the ones a human agreed were
- * wrong, or follow a spec revised after demo feedback. The build agent's
- * work, committed or not, is parked so the test agent sees the app as it is on the base
- * branch, then put back as uncommitted changes on top of the amended tests.
+ * Has the test agent revise locked tests: correct the ones a human agreed were wrong
+ * (in this idea's file or in an earlier idea's), or follow a spec revised after demo
+ * feedback. The build agent's work, committed or not, is parked so the test agent sees
+ * the app as it is on the base branch, then put back as uncommitted changes on top of
+ * the amended tests. Each file is committed on its own.
  */
 export async function amendTests(
   locked: LockedTests,
   issueNumber: number,
   spec: Spec,
-  revision: string,
+  revisions: TestRevision[],
   progress: Progress,
 ): Promise<LockedTests> {
   const { dir, testFile } = locked;
-  await restorePaths(dir, locked.testCommit, [testFile]);
+  const files = revisions.map((revision) => revision.file);
+  await restorePaths(dir, locked.testCommit, [
+    ...new Set([testFile, ...files]),
+  ]);
   // A dispute raised after CI has implementation commits on top of the tests; fold
   // them back into the working tree so all the build agent's work is parked together.
   await runOrThrow("git", ["reset", "--quiet", "--soft", locked.testCommit], {
@@ -164,43 +193,56 @@ export async function amendTests(
     cwd: dir,
   });
 
-  await progress("🧪 Test agent is revising the acceptance tests…");
-  const tests = await runTestAgentWithRetry(
-    dir,
-    spec,
-    testFile,
-    progress,
-    revision,
-  );
-  const lint = await lintWithOneFix(dir, spec, testFile, progress);
-  if (lint.errors) {
-    // Put the worktree back as it was: the locked tests, with the build agent's work uncommitted.
-    await discardChanges(dir);
-    await unpark(dir, parked);
-    throw new TestLintError(
-      dir,
-      locked.branch,
-      testFile,
-      lint.errors,
-      tests.costUsd + lint.costUsd,
+  let testReport = locked.testReport;
+  let costUsd = 0;
+  for (const { file, revision } of revisions) {
+    const isOwnFile = file === testFile;
+    await progress(
+      isOwnFile
+        ? "🧪 Test agent is revising the acceptance tests…"
+        : `🧪 Test agent is revising the disputed tests in \`${file}\`…`,
     );
+    const tests = await runTestAgentWithRetry(
+      dir,
+      spec,
+      file,
+      progress,
+      revision,
+    );
+    const lint = await lintWithOneFix(dir, spec, file, progress);
+    costUsd += tests.costUsd + lint.costUsd;
+    if (lint.errors) {
+      // Put the worktree back as it was: the locked tests, with the build agent's work uncommitted.
+      await runOrThrow(
+        "git",
+        ["reset", "--quiet", "--hard", locked.testCommit],
+        {
+          cwd: dir,
+        },
+      );
+      await discardChanges(dir);
+      await unpark(dir, parked);
+      throw new TestLintError(dir, locked.branch, file, lint.errors, costUsd);
+    }
+    await keepOnlyTestFile(
+      dir,
+      file,
+      isOwnFile
+        ? `${AMEND_PREFIX}${issueNumber}: ${spec.title}`
+        : `${AMEND_PREFIX}${issueNumber} (in ${file}): ${spec.title}`,
+    );
+    // Another idea's file says nothing about this spec's coverage.
+    if (isOwnFile) testReport = tests.report;
   }
-  const testCommit = await keepOnlyTestFile(
-    dir,
-    testFile,
-    `${AMEND_PREFIX}${issueNumber}: ${spec.title}`,
-  );
+  const testCommit = (
+    await runOrThrow("git", ["rev-parse", "HEAD"], { cwd: dir })
+  ).trim();
   await unpark(dir, parked);
   await writeFile(
     testReportPath(issueNumber),
-    JSON.stringify(tests.report, null, 2),
+    JSON.stringify(testReport, null, 2),
   );
-  return {
-    ...locked,
-    testCommit,
-    testReport: tests.report,
-    costUsd: tests.costUsd + lint.costUsd,
-  };
+  return { ...locked, testCommit, testReport, costUsd };
 }
 
 /**

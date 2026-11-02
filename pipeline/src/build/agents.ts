@@ -63,6 +63,12 @@ export type TestReport = z.infer<typeof TestReportSchema>;
 
 export const TestDisputeSchema = z.object({
   test: z.string().describe("Exact name of the disputed locked test"),
+  file: z
+    .string()
+    .nullable()
+    .describe(
+      "Repo-relative path of the file the test is in, e.g. e2e/demo/idea-18.spec.ts for an earlier idea's test; null for this idea's own test file",
+    ),
   assumption: z
     .string()
     .describe("What the test assumes about the app or its data"),
@@ -107,7 +113,7 @@ export type BuildReport = z.infer<typeof BuildReportSchema>;
 
 export function formatDispute(dispute: TestDispute): string {
   return [
-    `- **${dispute.test}**`,
+    `- **${dispute.test}**${dispute.file ? ` (\`${dispute.file}\`)` : ""}`,
     `  - Assumes: ${dispute.assumption}`,
     `  - Actually: ${dispute.actual}`,
     `  - Evidence: ${dispute.evidence}`,
@@ -115,16 +121,18 @@ export function formatDispute(dispute: TestDispute): string {
   ].join("\n");
 }
 
-/** Test-agent instructions for disputes a human accepted. */
+/** Test-agent instructions for disputes a human accepted, for one test file. */
 export function disputeRevision(
   testFile: string,
   disputes: TestDispute[],
+  options: { otherIdeasFile?: boolean } = {},
 ): string {
-  return [
-    `Revise the acceptance tests in \`${testFile}\`. The build agent disputed these tests and a human reviewer accepted the disputes. Change only what the disputes require, keep every other test as it is, and re-verify the whole file.`,
-    "## Accepted disputes",
-    ...disputes.map(formatDispute),
-  ].join("\n\n");
+  const intro = options.otherIdeasFile
+    ? `Revise tests in \`${testFile}\`, the locked acceptance tests of an earlier idea that is already merged. While building the current idea (its spec is below, for context only), the build agent disputed these tests and a human reviewer accepted the disputes. Change only the disputed tests, only as far as the disputes require, and keep what each one checks; don't add tests for the current spec and don't touch any other test. Then run the file against the demo build: tests you didn't change must still pass, and the disputed ones must fail only for the reason the current idea's missing work explains, if at all.`
+    : `Revise the acceptance tests in \`${testFile}\`. The build agent disputed these tests and a human reviewer accepted the disputes. Change only what the disputes require, keep every other test as it is, and re-verify the whole file.`;
+  return [intro, "## Accepted disputes", ...disputes.map(formatDispute)].join(
+    "\n\n",
+  );
 }
 
 /** Test-agent instructions for a spec revised after the owner tried the demo. */
