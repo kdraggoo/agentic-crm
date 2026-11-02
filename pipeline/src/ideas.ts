@@ -15,6 +15,7 @@ export type IdeaStatus =
   | "clarifying"
   | "spec-ready"
   | "rejected"
+  | "answered"
   | "building"
   | "test-dispute"
   | "in-review"
@@ -74,6 +75,11 @@ const STATUS_LABELS: Record<
     name: "po:rejected",
     color: "b60205",
     description: "Doesn't fit the product",
+  },
+  answered: {
+    name: "po:answered",
+    color: "c5def5",
+    description: "A question, answered",
   },
   building: {
     name: "build:in-progress",
@@ -323,12 +329,15 @@ export class IdeaStore {
   }
 
   /** Closes the idea's issue as done and deletes its branch on GitHub. */
-  async close(idea: Idea): Promise<void> {
+  async close(
+    idea: Idea,
+    reason: "completed" | "not_planned" = "completed",
+  ): Promise<void> {
     await this.octokit.issues.update({
       ...this.repo,
       issue_number: idea.issueNumber,
       state: "closed",
-      state_reason: "completed",
+      state_reason: reason,
     });
     if (idea.branch) {
       await this.octokit.git
@@ -384,9 +393,15 @@ export function pullNumberFrom(url: string): number {
   return Number(match[1]);
 }
 
-export function statusFor(result: PoResult): IdeaStatus {
+export function statusFor(result: PoResult, previous: IdeaStatus): IdeaStatus {
   if (result.decision === "ready_for_spec") return "spec-ready";
   if (result.decision === "reject") return "rejected";
+  if (result.decision === "answer") {
+    // A question about a written spec or a built demo doesn't change where it stands.
+    return previous === "spec-ready" || previous === "in-review"
+      ? previous
+      : "answered";
+  }
   return "clarifying";
 }
 
@@ -397,10 +412,11 @@ export function latestSpec(idea: Idea): Spec | null {
   return latest?.role === "po" ? latest.result.spec : null;
 }
 
-/** Transcript index of the product owner's latest evaluation, or -1. */
+/** Transcript index of the product owner's latest evaluation, or -1. An answer to a question isn't one. */
 export function latestPoTurn(idea: Idea): number {
   for (let index = idea.transcript.length - 1; index >= 0; index--) {
-    if (idea.transcript[index]?.role === "po") return index;
+    const turn = idea.transcript[index];
+    if (turn?.role === "po" && turn.result.decision !== "answer") return index;
   }
   return -1;
 }

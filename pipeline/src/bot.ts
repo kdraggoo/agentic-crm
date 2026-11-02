@@ -7,6 +7,8 @@
  *   whose demo the preview workflow publishes on GitHub Pages.
  * - Replies to a built idea are feedback on its demo: the product owner revises the spec, and
  *   approving it updates the same PR. "merge" squash-merges the PR and closes the idea.
+ * - A question gets an answer. "close" or a ✅ closes an answered question or a rejected idea, and
+ *   both close by themselves after CLOSE_AFTER_DAYS without a reply.
  * - The forum tag and the issue label track where each idea stands.
  * - When GitHub CI fails on main, the bot opens a thread of its own and the fixer agent
  *   prepares a fix PR; the owner merges it from that thread like any idea.
@@ -23,7 +25,8 @@ import {
   type ForumChannel,
   type Message,
 } from "discord.js";
-import { previewUrl, requireEnv } from "./config.js";
+import { CLOSE_AFTER_DAYS, previewUrl, requireEnv } from "./config.js";
+import { isClosable, isDueToClose } from "./closing.js";
 import { formatDispute } from "./build/agents.js";
 import { formatCheckResults } from "./build/checks.js";
 import { formatCiResult } from "./build/ci.js";
@@ -69,6 +72,9 @@ const REJECT_PATTERN = /^(reject|rejected|keep (the )?tests?)[.!]?$/i;
 /** Replies that continue a failed build from its kept work. */
 const CONTINUE_PATTERN = /^(continue|resume|keep going)[.!]?$/i;
 
+/** Replies that close an answered question or a rejected idea. */
+const CLOSE_PATTERN = /^(close|close it|done|thanks|thank you)[.!]?$/i;
+
 /** Statuses from which an approval starts a build. */
 const BUILDABLE: ReadonlySet<IdeaStatus> = new Set([
   "spec-ready",
@@ -80,6 +86,7 @@ const STATUS_TAGS: Record<IdeaStatus, string> = {
   clarifying: "Clarifying",
   "spec-ready": "Spec ready",
   rejected: "Rejected",
+  answered: "Answered",
   building: "Building",
   "test-dispute": "Test dispute",
   "in-review": "In review",
@@ -149,9 +156,11 @@ client.once(Events.ClientReady, async (ready) => {
     },
   });
   await syncMerged();
+  await closeIdle();
   void fixes.watchMain();
   setInterval(() => {
     void syncMerged();
+    void closeIdle();
     void fixes.watchMain();
   }, MERGE_SYNC_MS);
 });
@@ -221,6 +230,10 @@ client.on(Events.MessageCreate, (message) => {
     }
     return;
   }
+  if (isClosable(idea) && CLOSE_PATTERN.test(message.content.trim())) {
+    void closeIdea(thread, idea, "🔒 Closed.");
+    return;
+  }
   if (
     BUILDABLE.has(idea.status) &&
     APPROVAL_PATTERN.test(message.content.trim())
@@ -248,7 +261,8 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
   if (!thread.isThread() || thread.parentId !== FORUM_CHANNEL_ID) return;
   if (message.author?.id !== client.user?.id) return;
   const idea = ideas.get(thread.id);
-  if (idea && !idea.fix && BUILDABLE.has(idea.status))
+  if (idea && isClosable(idea)) void closeIdea(thread, idea, "🔒 Closed.");
+  else if (idea && !idea.fix && BUILDABLE.has(idea.status))
     void startBuild(thread, idea);
 });
 
@@ -334,7 +348,7 @@ async function runRound(
   try {
     const { result, costUsd } = await evaluateIdea(idea.transcript);
     idea.transcript.push({ role: "po", result, at: new Date().toISOString() });
-    idea.status = statusFor(result);
+    idea.status = statusFor(result, idea.status);
 
     for (const chunk of chunkForDiscord(formatEvaluation(result)))
       await thread.send(chunk);
@@ -343,6 +357,11 @@ async function runRound(
         builtVersion(idea) && idea.pullRequestUrl
           ? `Reply **approve** (or react ✅ to this message) to update ${idea.pullRequestUrl} to this revised spec, reply with more changes, or reply **merge** to merge the current version as it is.`
           : "Reply **approve** (or react ✅ to this message) to build it, or reply with changes to revise the spec.",
+      );
+    }
+    if (isClosable(idea)) {
+      await thread.send(
+        `Reply **close** (or react ✅ to this message) when you're done, or reply to continue: ask a follow-up, or ask for a change and it becomes an idea. This closes by itself after ${CLOSE_AFTER_DAYS} days without a reply.`,
       );
     }
     await store.save(idea, roundComment(result, replies));
@@ -548,6 +567,53 @@ async function finishMerged(
   await applyStatusTag(thread, "merged");
   await thread.send(message);
   console.log(`#${idea.issueNumber} → merged`);
+}
+
+/** Closes an answered question or a rejected idea: issue, thread, and the bot's memory of it. */
+async function closeIdea(
+  thread: AnyThreadChannel,
+  idea: Idea,
+  message: string,
+): Promise<void> {
+  try {
+    const entry = work.get(thread.id);
+    if (entry?.timer) clearTimeout(entry.timer);
+    work.delete(thread.id);
+    await store.save(idea, message);
+    await store.close(
+      idea,
+      idea.status === "rejected" ? "not_planned" : "completed",
+    );
+    ideas.delete(idea.threadId);
+    await thread.send(message);
+    await thread.setArchived(true);
+    console.log(`#${idea.issueNumber} closed (${idea.status})`);
+  } catch (error: unknown) {
+    await reportError(thread, error);
+  }
+}
+
+/** Closes answered questions and rejected ideas nobody has replied to for a while. */
+async function closeIdle(): Promise<void> {
+  const now = new Date();
+  for (const idea of [...ideas.values()]) {
+    const entry = work.get(idea.threadId);
+    const isBusy = entry?.running || entry?.pendingReplies.length;
+    if (isBusy || !isDueToClose(idea, now)) continue;
+    try {
+      const thread = await client.channels.fetch(idea.threadId);
+      if (thread?.isThread()) {
+        await closeIdea(
+          thread,
+          idea,
+          `🔒 Closed after ${CLOSE_AFTER_DAYS} days without a reply. Post again to pick this up.`,
+        );
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Could not close #${idea.issueNumber}: ${message}`);
+    }
+  }
 }
 
 /** Finds pull requests merged on GitHub rather than from Discord, and closes their ideas. */
