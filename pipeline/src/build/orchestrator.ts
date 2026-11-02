@@ -12,6 +12,7 @@ import {
 } from "./agents.js";
 import { generateRegistry, runChecks } from "./checks.js";
 import { restoreDemoConfig } from "./guardrails.js";
+import { reviewSecurity } from "./security.js";
 import { failuresOnlyIn, rerunCi, waitForCi, type CiResult } from "./ci.js";
 import {
   commitAll,
@@ -274,24 +275,34 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
 
     await progress("🧐 Reviewer agent is checking the diff…");
     const diff = await diffSince(dir, testCommit);
+    const reviewTask = formatSpec(spec);
     const reviewed = await runReviewer(dir, {
-      task: formatSpec(spec),
+      task: reviewTask,
       diff,
       flags: automaticFlags(diff),
       buildReport: report,
-      previousFindings,
+      previousFindings: previousFindings?.filter(
+        (finding) => finding.category !== "security",
+      ),
     });
     costUsd += reviewed.costUsd;
-    const blocking = reviewed.review.findings.filter(
+    const security = await reviewSecurity(
+      dir,
+      { task: reviewTask, diff, previousFindings },
+      progress,
+    );
+    costUsd += security.costUsd;
+    const findings = [...reviewed.review.findings, ...security.findings];
+    const blocking = findings.filter(
       (finding) => finding.severity === "blocking",
     );
     if (blocking.length > 0) {
       await progress(
-        `🧐 Reviewer requested changes:\n${blocking.map((f) => `- ${f.summary}`).join("\n")}`,
+        `🧐 Reviewers requested changes:\n${blocking.map((f) => `- ${f.summary}`).join("\n")}`,
       );
       previousFindings = blocking;
       previousFailure = [
-        "The checks passed, but the reviewer agent found problems you must fix:",
+        "The checks passed, but the reviewer agents found problems you must fix (the security reviewer's are marked security):",
         ...blocking.map(formatFinding),
         "If you believe a finding is wrong, keep your code and explain why in reviewer_notes; the reviewer reads your notes on the next review.",
       ].join("\n");
@@ -306,9 +317,7 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
       buildReport: report,
       checks,
       review: {
-        findings: reviewed.review.findings.filter(
-          (finding) => finding.severity === "note",
-        ),
+        findings: findings.filter((finding) => finding.severity === "note"),
       },
       attempts: attempt,
       costUsd,

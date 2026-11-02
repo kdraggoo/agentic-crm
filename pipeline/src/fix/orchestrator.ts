@@ -13,6 +13,7 @@ import {
   push,
 } from "../build/git.js";
 import { restoreDemoConfig } from "../build/guardrails.js";
+import { reviewSecurity } from "../build/security.js";
 import {
   automaticFlags,
   diffSince,
@@ -169,28 +170,38 @@ export async function fixMain(request: FixRequest): Promise<FixOutcome> {
 
     await progress("🧐 Reviewer agent is checking the fix…");
     const diff = await diffSince(dir, base);
+    const reviewTask = [
+      incident,
+      "## Root cause, according to the fixer agent",
+      report.root_cause,
+    ].join("\n\n");
     const reviewed = await runReviewer(dir, {
-      task: [
-        incident,
-        "## Root cause, according to the fixer agent",
-        report.root_cause,
-      ].join("\n\n"),
+      task: reviewTask,
       diff,
       flags: [...automaticFlags(diff), ...fixFlags(changed)],
       buildReport: report,
-      previousFindings,
+      previousFindings: previousFindings?.filter(
+        (finding) => finding.category !== "security",
+      ),
     });
     costUsd += reviewed.costUsd;
-    const blocking = reviewed.review.findings.filter(
+    const security = await reviewSecurity(
+      dir,
+      { task: reviewTask, diff, previousFindings },
+      progress,
+    );
+    costUsd += security.costUsd;
+    const findings = [...reviewed.review.findings, ...security.findings];
+    const blocking = findings.filter(
       (finding) => finding.severity === "blocking",
     );
     if (blocking.length > 0) {
       await progress(
-        `🧐 Reviewer requested changes:\n${blocking.map((f) => `- ${f.summary}`).join("\n")}`,
+        `🧐 Reviewers requested changes:\n${blocking.map((f) => `- ${f.summary}`).join("\n")}`,
       );
       previousFindings = blocking;
       previousFailure = [
-        "The checks passed, but the reviewer agent found problems you must fix:",
+        "The checks passed, but the reviewer agents found problems you must fix (the security reviewer's are marked security):",
         ...blocking.map(formatFinding),
         "If you believe a finding is wrong, keep your code and explain why in reviewer_notes; the reviewer reads your notes on the next review.",
       ].join("\n");
@@ -206,9 +217,7 @@ export async function fixMain(request: FixRequest): Promise<FixOutcome> {
       report,
       checks,
       review: {
-        findings: reviewed.review.findings.filter(
-          (finding) => finding.severity === "note",
-        ),
+        findings: findings.filter((finding) => finding.severity === "note"),
       },
       attempts: attempt,
       costUsd,
