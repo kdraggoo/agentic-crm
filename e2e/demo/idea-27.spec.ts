@@ -30,7 +30,9 @@ async function navigateToDealWithLineItemsEdit(page: Page) {
   for (let i = 0; i < count; i++) {
     await dealCards.nth(i).click();
     // Wait for the show dialog to appear
-    await expect(page.getByRole("link", { name: "Edit" })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Edit", exact: true }),
+    ).toBeVisible();
 
     // Check if this deal has line items
     const hasLineItems = await page
@@ -41,7 +43,7 @@ async function navigateToDealWithLineItemsEdit(page: Page) {
 
     if (hasLineItems) {
       // Open the edit form
-      await page.getByRole("link", { name: "Edit" }).click();
+      await page.getByRole("link", { name: "Edit", exact: true }).click();
       // Wait for the edit form to render with the line items section heading
       await expect(
         page.getByRole("heading", { name: "Line items" }),
@@ -51,7 +53,9 @@ async function navigateToDealWithLineItemsEdit(page: Page) {
 
     // Close this dialog and try the next deal
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("link", { name: "Edit" })).toBeHidden();
+    await expect(
+      page.getByRole("link", { name: "Edit", exact: true }),
+    ).toBeHidden();
   }
 
   throw new Error(
@@ -118,7 +122,9 @@ test.describe("idea-27: product name in deal line items edit", () => {
 
     for (let i = 0; i < count && !foundArchived; i++) {
       await dealCards.nth(i).click();
-      await expect(page.getByRole("link", { name: "Edit" })).toBeVisible();
+      await expect(
+        page.getByRole("link", { name: "Edit", exact: true }),
+      ).toBeVisible();
 
       // Check if this deal's show view has an "Archived" badge (for archived products).
       // Use a short timeout: most deals won't have one.
@@ -131,7 +137,7 @@ test.describe("idea-27: product name in deal line items edit", () => {
 
       if (hasArchived) {
         // Open the edit form
-        await page.getByRole("link", { name: "Edit" }).click();
+        await page.getByRole("link", { name: "Edit", exact: true }).click();
         await expect(
           page.getByRole("heading", { name: "Line items" }),
         ).toBeVisible();
@@ -158,7 +164,9 @@ test.describe("idea-27: product name in deal line items edit", () => {
       if (!foundArchived) {
         // Close dialog and try the next deal
         await page.keyboard.press("Escape");
-        await expect(page.getByRole("link", { name: "Edit" })).toBeHidden();
+        await expect(
+          page.getByRole("link", { name: "Edit", exact: true }),
+        ).toBeHidden();
       }
     }
 
