@@ -8,8 +8,6 @@ import {
   buildEnv,
 } from "../config.js";
 import { runClaude } from "../claude.js";
-import { formatSpec } from "../po/format.js";
-import type { Spec } from "../po/schema.js";
 import type { BuildReport } from "./agents.js";
 import { runOrThrow } from "./run.js";
 
@@ -89,10 +87,11 @@ export function automaticFlags(diff: string): string[] {
 export async function runReviewer(
   dir: string,
   input: {
-    spec: Spec;
+    /** What the change is for: the formatted spec, or the CI failure a fix addresses. */
+    task: string;
     diff: string;
     flags: string[];
-    buildReport: BuildReport;
+    buildReport: Pick<BuildReport, "summary" | "reviewer_notes">;
     previousFindings?: ReviewFinding[];
   },
 ): Promise<{ review: Review; costUsd: number }> {
@@ -103,7 +102,7 @@ export async function runReviewer(
       : input.diff;
   const sections = [
     "Review this change.",
-    formatSpec(input.spec),
+    input.task,
     "## Automatic flags",
     ...(input.flags.length > 0
       ? input.flags.map((flag) => `- ${flag}`)

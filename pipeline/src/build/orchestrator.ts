@@ -1,5 +1,6 @@
 import { MAX_BUILD_ATTEMPTS } from "../config.js";
 import { ClaudeTimeoutError } from "../claude.js";
+import { formatSpec } from "../po/format.js";
 import type { Spec } from "../po/schema.js";
 import {
   disputeRevision,
@@ -11,12 +12,7 @@ import {
 } from "./agents.js";
 import { generateRegistry, runChecks } from "./checks.js";
 import { restoreDemoConfig } from "./guardrails.js";
-import {
-  failuresOnlyIn,
-  rerunFailedJobs,
-  waitForCi,
-  type CiResult,
-} from "./ci.js";
+import { failuresOnlyIn, rerunCi, waitForCi, type CiResult } from "./ci.js";
 import {
   commitAll,
   deleteFiles,
@@ -279,7 +275,7 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
     await progress("🧐 Reviewer agent is checking the diff…");
     const diff = await diffSince(dir, testCommit);
     const reviewed = await runReviewer(dir, {
-      spec,
+      task: formatSpec(spec),
       diff,
       flags: automaticFlags(diff),
       buildReport: report,
@@ -368,15 +364,6 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
   return fail(
     `No passing build after ${MAX_BUILD_ATTEMPTS} attempts. Last problem:\n${previousFailure ?? "unknown"}`,
   );
-}
-
-async function rerunCi(failed: CiResult, sha: string): Promise<CiResult> {
-  try {
-    await rerunFailedJobs(failed.failedRunIds);
-  } catch {
-    return failed;
-  }
-  return waitForCi(sha);
 }
 
 const DISPUTE_LOG_LINES = 25;

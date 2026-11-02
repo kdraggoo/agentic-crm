@@ -30,12 +30,7 @@ export async function waitForCi(sha: string): Promise<CiResult> {
   let finishedAt: number | undefined;
 
   while (Date.now() < deadline) {
-    const { data } = await octokit.actions.listWorkflowRunsForRepo({
-      ...repo,
-      head_sha: sha,
-      per_page: 50,
-    });
-    const runs = data.workflow_runs;
+    const runs = await runsFor(octokit, repo, sha);
     const allDone =
       runs.length > 0 && runs.every((run) => run.status === "completed");
     if (!allDone) {
@@ -50,6 +45,45 @@ export async function waitForCi(sha: string): Promise<CiResult> {
   throw new Error(
     `GitHub CI did not finish on ${sha.slice(0, 7)} within ${Math.round(CI_TIMEOUT_MS / 60_000)} minutes`,
   );
+}
+
+/**
+ * The CI result for a commit if every run on it has finished, without waiting; null
+ * while runs are still going or none have started.
+ */
+export async function finishedCi(sha: string): Promise<CiResult | null> {
+  const octokit = new Octokit({ auth: githubToken() });
+  const repo = githubRepo();
+  const runs = await runsFor(octokit, repo, sha);
+  if (runs.length === 0 || runs.some((run) => run.status !== "completed"))
+    return null;
+  return collectResult(octokit, repo, runs);
+}
+
+/** Re-runs a failed result's jobs once and waits for the new result. */
+export async function rerunCi(
+  failed: CiResult,
+  sha: string,
+): Promise<CiResult> {
+  try {
+    await rerunFailedJobs(failed.failedRunIds);
+  } catch {
+    return failed;
+  }
+  return waitForCi(sha);
+}
+
+async function runsFor(
+  octokit: Octokit,
+  repo: { owner: string; repo: string },
+  sha: string,
+): Promise<{ id: number; status: string | null }[]> {
+  const { data } = await octokit.actions.listWorkflowRunsForRepo({
+    ...repo,
+    head_sha: sha,
+    per_page: 50,
+  });
+  return data.workflow_runs;
 }
 
 async function collectResult(

@@ -13,7 +13,7 @@ import { runClaude } from "../claude.js";
 import { formatSpec } from "../po/format.js";
 import type { Spec } from "../po/schema.js";
 
-const FILE_TOOLS = ["Read", "Grep", "Glob", "Edit", "Write"];
+export const FILE_TOOLS = ["Read", "Grep", "Glob", "Edit", "Write"];
 
 /** Shell commands the test agent may run. Anything else is denied. */
 const TEST_AGENT_COMMANDS = [
@@ -24,7 +24,7 @@ const TEST_AGENT_COMMANDS = [
 ];
 
 /** Shell commands the build agent may run: the project's checks, nothing else (no git). */
-const BUILD_AGENT_COMMANDS = [
+export const BUILD_AGENT_COMMANDS = [
   "Bash(npm run typecheck)",
   "Bash(npm run build:demo)",
   "Bash(npx eslint:*)",
@@ -142,7 +142,7 @@ export function specRevision(
   ].join("\n\n");
 }
 
-async function prompt(file: string): Promise<string> {
+export async function prompt(file: string): Promise<string> {
   return readFile(path.join(PROMPTS_DIR, file), "utf8");
 }
 

@@ -36,6 +36,14 @@ export interface Idea {
   disputes?: TestDispute[];
   /** Transcript index of the product-owner turn whose spec the pull request implements. */
   builtTurn?: number;
+  /** Set when this is a fix for failing CI on main rather than an idea. */
+  fix?: CiFix;
+}
+
+export interface CiFix {
+  /** The main commit whose CI failed. */
+  sha: string;
+  failedJobs: string[];
 }
 
 export interface PullRequestState {
@@ -47,6 +55,7 @@ export interface PullRequestState {
 }
 
 const IDEA_LABEL = "idea";
+const FIX_LABEL = "ci-fix";
 const STATUS_LABELS: Record<
   IdeaStatus,
   { name: string; color: string; description: string }
@@ -106,6 +115,7 @@ interface StoredState {
   pullRequestUrl?: string;
   disputes?: TestDispute[];
   builtTurn?: number;
+  fix?: CiFix;
 }
 
 function toState(idea: Idea): StoredState {
@@ -117,6 +127,7 @@ function toState(idea: Idea): StoredState {
     pullRequestUrl: idea.pullRequestUrl,
     disputes: idea.disputes,
     builtTurn: idea.builtTurn,
+    fix: idea.fix,
   };
 }
 
@@ -130,6 +141,11 @@ export class IdeaStore {
         name: IDEA_LABEL,
         color: "5319e7",
         description: "Submitted through the idea pipeline",
+      },
+      {
+        name: FIX_LABEL,
+        color: "d93f0b",
+        description: "Fixes failing CI on main",
       },
       ...Object.values(STATUS_LABELS),
     ];
@@ -175,7 +191,11 @@ export class IdeaStore {
     await this.octokit.issues.setLabels({
       ...this.repo,
       issue_number: idea.issueNumber,
-      labels: [IDEA_LABEL, STATUS_LABELS[idea.status].name],
+      labels: [
+        IDEA_LABEL,
+        ...(idea.fix ? [FIX_LABEL] : []),
+        STATUS_LABELS[idea.status].name,
+      ],
     });
     if (comment) {
       await this.octokit.issues.createComment({
@@ -184,6 +204,40 @@ export class IdeaStore {
         body: comment,
       });
     }
+  }
+
+  /** Records a fix for failing CI on main, already building. */
+  async createFix(
+    threadId: string,
+    title: string,
+    fix: CiFix,
+    description: string,
+  ): Promise<Idea> {
+    const state: StoredState = {
+      threadId,
+      status: "building",
+      transcript: [
+        {
+          role: "submitter",
+          author: "pipeline",
+          text: description,
+          at: new Date().toISOString(),
+        },
+      ],
+      fix,
+    };
+    const { data } = await this.octokit.issues.create({
+      ...this.repo,
+      title,
+      body: renderBody(state),
+      labels: [IDEA_LABEL, FIX_LABEL, STATUS_LABELS.building.name],
+    });
+    return {
+      issueNumber: data.number,
+      issueUrl: data.html_url,
+      title,
+      ...state,
+    };
   }
 
   /** Opens a pull request for the branch, or updates the open one if a rebuild reused it. */
