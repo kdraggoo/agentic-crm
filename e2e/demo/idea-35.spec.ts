@@ -164,8 +164,8 @@ test.describe("Deals date range filters", () => {
 
     // From and To date inputs should appear
     // Assumption: the date pickers are labeled "From" and "To" (or use those as placeholders)
-    const fromInput = page.getByLabel("From");
-    const toInput = page.getByLabel("To");
+    const fromInput = page.getByLabel("From", { exact: true });
+    const toInput = page.getByLabel("To", { exact: true });
     await expect(fromInput).toBeVisible();
     await expect(toInput).toBeVisible();
   });
@@ -185,7 +185,7 @@ test.describe("Deals date range filters", () => {
     await page.getByRole("button", { name: "Custom", exact: true }).click();
 
     // Set a "from" date in the past (e.g. 2020-01-01 to include most deals)
-    const fromInput = page.getByLabel("From");
+    const fromInput = page.getByLabel("From", { exact: true });
     await expect(fromInput).toBeVisible();
     await fromInput.fill("2020-01-01");
 
@@ -210,7 +210,7 @@ test.describe("Deals date range filters", () => {
     await page.getByRole("button", { name: "Custom", exact: true }).click();
 
     // Set a "to" date far in the future (to include all deals)
-    const toInput = page.getByLabel("To");
+    const toInput = page.getByLabel("To", { exact: true });
     await expect(toInput).toBeVisible();
     await toInput.fill("2030-12-31");
 
@@ -237,8 +237,8 @@ test.describe("Deals date range filters", () => {
 
     // Pick "Custom" and set a very wide range
     await page.getByRole("button", { name: "Custom", exact: true }).click();
-    const fromInput = page.getByLabel("From");
-    const toInput = page.getByLabel("To");
+    const fromInput = page.getByLabel("From", { exact: true });
+    const toInput = page.getByLabel("To", { exact: true });
     await expect(fromInput).toBeVisible();
     await fromInput.fill("2000-01-01");
     await toInput.fill("2099-12-31");
@@ -281,7 +281,7 @@ test.describe("Deals date range filters", () => {
       '[data-source*="expected_closing_date"]',
     );
     await expectedClosingFilterField
-      .getByRole("button", { name: "Remove filter" })
+      .getByRole("button", { name: "Remove this filter" })
       .click();
 
     // Now activate created date filter
@@ -309,7 +309,7 @@ test.describe("Deals date range filters", () => {
     await page.getByRole("button", { name: "This quarter" }).click();
 
     // The search input (alwaysOn) should still be visible and functional
-    const searchInput = page.getByRole("searchbox");
+    const searchInput = page.getByRole("textbox", { name: "Search" });
     await expect(searchInput).toBeVisible();
 
     // Type a search query – both filters should be AND-combined
@@ -377,7 +377,9 @@ test.describe("Deals date range filters", () => {
     await expect(filterField).toBeVisible();
 
     // Click the remove (MinusCircle) button
-    await filterField.getByRole("button", { name: "Remove filter" }).click();
+    await filterField
+      .getByRole("button", { name: "Remove this filter" })
+      .click();
 
     // The expected closing date filter UI should be gone
     await expect(filterField).toBeHidden();
