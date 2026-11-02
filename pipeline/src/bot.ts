@@ -30,6 +30,7 @@ import { formatCiResult } from "./build/ci.js";
 import { removeWorktree } from "./build/git.js";
 import { buildIdea, type BuildRequest } from "./build/orchestrator.js";
 import { createFixFlow } from "./fix/discord.js";
+import { recoverInterruptedBuilds } from "./recovery.js";
 import {
   BUILD_FAILED_HEADING,
   IdeaStore,
@@ -138,6 +139,15 @@ client.once(Events.ClientReady, async (ready) => {
   console.log(
     `Logged in as ${ready.user.tag}. Watching forum ${FORUM_CHANNEL_ID}; ${ideas.size} open ideas loaded.`,
   );
+  await recoverInterruptedBuilds(ideas.values(), {
+    save: (idea, comment) => store.save(idea, comment),
+    notify: async (idea, message) => {
+      const thread = await client.channels.fetch(idea.threadId);
+      if (!thread?.isThread()) return;
+      await applyStatusTag(thread, idea.status);
+      await thread.send(message);
+    },
+  });
   await syncMerged();
   void fixes.watchMain();
   setInterval(() => {

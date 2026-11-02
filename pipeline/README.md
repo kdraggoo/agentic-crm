@@ -36,6 +36,7 @@ GitHub CI on main fails (checked every 10 minutes; failed jobs re-run once first
 ## How it works
 
 - **Product-owner agent** (`src/po/`): runs Claude Code headlessly (`claude -p`) with the instructions in [`prompts/product-owner.md`](prompts/product-owner.md), the product context layer from [`docs/product/`](../docs/product/README.md) as its system prompt, and read-only tools (Read, Grep, Glob) over the repo. It returns structured JSON (`src/po/schema.ts`): a classification, related features, constraint findings, and then either questions, a spec, or a rejection.
+- **Restarts:** builds run inside the bot's process, so a restart stops any build running or queued. At startup, an idea still marked as building is set to "Build failed" and told so in its thread; its work stays in the worktree, so **continue** picks it up and **approve** starts over.
 - **Stateless rounds:** every evaluation gets the whole conversation so far, so nothing depends on a long-lived session. The transcript is stored in the GitHub issue, which means the bot can restart at any time.
 - **Discord bot** (`src/bot.ts`): a new forum post creates an issue and triggers the first evaluation. Replies in the thread are batched (20 seconds after the last message) and sent back to the agent. The forum tag and the issue label follow the status.
 - **Approval gate:** a spec builds only after the owner replies `approve` (or `lgtm`, `ship it`, `build it`) or reacts ✅ to one of the bot's messages. Any other reply goes back to the product-owner agent to revise the spec.
