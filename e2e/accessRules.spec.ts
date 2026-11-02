@@ -128,7 +128,9 @@ async function seed(salesId: number): Promise<void> {
   await service.from("configuration").upsert({ id: 1 });
 }
 
-test.beforeAll(async (_fixtures, testInfo) => {
+// Playwright requires the fixtures argument to be destructured, even when unused.
+// eslint-disable-next-line no-empty-pattern
+test.beforeAll(async ({}, testInfo) => {
   // No browser involved: one project is enough.
   test.skip(testInfo.project.name !== "chromium");
   const stamp = Date.now();
