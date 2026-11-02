@@ -48,9 +48,16 @@ export const PoResultSchema = z.object({
     .string()
     .describe("One-sentence restatement of the idea as understood so far"),
   classification: z
-    .enum(["iteration", "new_feature", "conflict", "out_of_scope", "unclear"])
+    .enum([
+      "iteration",
+      "new_feature",
+      "conflict",
+      "out_of_scope",
+      "question",
+      "unclear",
+    ])
     .describe(
-      "iteration: changes an existing feature; conflict: contradicts a feature or constraint",
+      "iteration: changes an existing feature; conflict: contradicts a feature or constraint; question: asks how the product works, requests no change",
     ),
   related_features: z.array(
     z.object({
@@ -66,9 +73,9 @@ export const PoResultSchema = z.object({
     }),
   ),
   decision: z
-    .enum(["needs_answers", "ready_for_spec", "reject"])
+    .enum(["needs_answers", "ready_for_spec", "reject", "answer"])
     .describe(
-      "needs_answers: ask questions; ready_for_spec: spec is filled in; reject: cannot fit",
+      "needs_answers: ask questions; ready_for_spec: spec is filled in; reject: cannot fit; answer: the post only asks a question and requests no change at all; a post that also requests a change is never answer",
     ),
   questions: z
     .array(
@@ -85,6 +92,7 @@ export const PoResultSchema = z.object({
     .string()
     .nullable()
     .describe("Set only when decision is reject"),
+  answer: z.string().nullable().describe("Set only when decision is answer"),
   spec: SpecSchema.nullable().describe(
     "Set only when decision is ready_for_spec",
   ),

@@ -51,6 +51,9 @@ export const REVIEW_TIMEOUT_MS = Number(
 export const CI_TIMEOUT_MS = Number(process.env.CI_TIMEOUT_MS ?? 30 * 60_000);
 
 /** Build attempts per approval: the first try plus retries with the failing check output. */
+/** Days without a reply before an answered question or a rejected idea is closed. */
+export const CLOSE_AFTER_DAYS = Number(process.env.CLOSE_AFTER_DAYS ?? 7);
+
 export const MAX_BUILD_ATTEMPTS = Number(process.env.MAX_BUILD_ATTEMPTS ?? 3);
 
 /** Where each idea's git worktree is created. Outside the repo so builds never touch it. */

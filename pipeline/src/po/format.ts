@@ -5,6 +5,7 @@ const CLASSIFICATION_LABEL: Record<PoResult["classification"], string> = {
   new_feature: "New feature",
   conflict: "Conflicts with something existing",
   out_of_scope: "Out of scope",
+  question: "Question",
   unclear: "Unclear so far",
 };
 
@@ -65,6 +66,10 @@ export function formatEvaluation(result: PoResult): string {
       "**Not a fit**",
       result.rejection_reason ?? "No reason given.",
     );
+  }
+
+  if (result.decision === "answer") {
+    lines.push("", "**Answer**", result.answer ?? "No answer given.");
   }
 
   if (result.decision === "ready_for_spec" && result.spec) {
