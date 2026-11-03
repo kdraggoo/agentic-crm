@@ -596,6 +596,11 @@ export const createDataProvider = ({
       } satisfies ResourceCallbacks<Company>,
       {
         resource: "deals",
+        beforeGetList: async (params) => {
+          // Strip the client-side propensity filter before FakeRest processes it
+          const { propensity_bucket: _, ...filter } = params.filter ?? {};
+          return { ...params, filter };
+        },
         beforeCreate: async (params) => {
           return {
             ...params,

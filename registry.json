@@ -620,6 +620,10 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/deals/propensityFilterUtils.ts",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/deals/lineItemsUtils.ts",
           "type": "registry:component"
         },

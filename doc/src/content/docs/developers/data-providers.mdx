@@ -60,3 +60,13 @@ export default App;
 The list filters used in this project MUST follow the [`ra-data-postgrest`](https://github.com/raphiniert-com/ra-data-postgrest) convention, where the filter operator is concatenated to the field name with an `@`. For example, to filter contacts by first name, you would use the `first_name@eq` filter.
 
 When using FakeRest, the filters are mapped at runtime to the FakeRest filter syntax by the the [`supabaseAdapter`](https://github.com/marmelab/atomic-crm/blob/main/src/components/atomic-crm/providers/fakerest/internal/supabaseAdapter.ts) file. If a filter is not yet supported by the adapter, you have to modify this file to add support for it.
+
+#### Client-side post-filters
+
+Properties computed in the browser (such as propensity-to-buy, which is never stored server-side for auto-scored deals) cannot use the postgrest convention. Instead they follow this pattern:
+
+1. The filter input uses a plain key (e.g. `propensity_bucket`) with no `@operator` suffix.
+2. Both data providers strip the key in their `beforeGetList` callback so it is never sent to the API.
+3. The list component reads the filter value from `useListContext().filterValues` and applies a post-filter after client-side scoring is complete.
+
+See `crm/deals/propensityFilterUtils.ts` for the reference implementation.

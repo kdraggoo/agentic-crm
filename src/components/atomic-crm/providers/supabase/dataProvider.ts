@@ -395,9 +395,12 @@ const lifeCycleCallbacks: ResourceCallbacks[] = [
   {
     resource: "deals",
     beforeGetList: async (params, dataProvider) => {
+      // Strip the client-side propensity filter before the request goes out
+      const { propensity_bucket: _, ...filter } = params.filter ?? {};
+      const cleanedParams = { ...params, filter };
       return searchDealCategories(
-        applyFullTextSearch(["name", "description"])(params),
-        params.filter?.q,
+        applyFullTextSearch(["name", "description"])(cleanedParams),
+        cleanedParams.filter?.q,
         dataProvider,
       );
     },

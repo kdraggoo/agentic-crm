@@ -1,35 +1,84 @@
 import { DragDropContext, type OnDragEndResponder } from "@hello-pangea/dnd";
 import isEqual from "lodash/isEqual";
 import { useDataProvider, useListContext, type DataProvider } from "ra-core";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useConfigurationContext } from "../root/ConfigurationContext";
-import type { Deal } from "../types";
+import type { Deal, PropensityBucket } from "../types";
 import { DealColumn } from "./DealColumn";
-import { DealPropensityProvider } from "./DealPropensityContext";
+import {
+  DealPropensityProvider,
+  useDealPropensityMap,
+} from "./DealPropensityContext";
+import {
+  PROPENSITY_FILTER_SOURCE,
+  filterDealsByPropensity,
+} from "./propensityFilterUtils";
 import type { DealsByStage } from "./stages";
 import { getDealsByStage } from "./stages";
 
 export const DealListContent = () => {
-  const { dealStages } = useConfigurationContext();
-  const { data: unorderedDeals, isPending, refetch } = useListContext<Deal>();
+  const {
+    data: unorderedDeals,
+    isPending,
+    filterValues,
+  } = useListContext<Deal>();
+
+  const propensityBuckets = filterValues?.[PROPENSITY_FILTER_SOURCE] as
+    PropensityBucket[] | undefined;
+
+  if (isPending) return null;
+
+  return (
+    <DealPropensityProvider deals={unorderedDeals ?? []}>
+      <DealListColumns
+        deals={unorderedDeals ?? []}
+        propensityBuckets={propensityBuckets}
+      />
+    </DealPropensityProvider>
+  );
+};
+
+/**
+ * Inner component that renders the Kanban columns. It lives inside
+ * DealPropensityProvider so it can access the computed propensity map and
+ * apply the client-side propensity filter before grouping deals into columns.
+ */
+const DealListColumns = ({
+  deals,
+  propensityBuckets,
+}: {
+  deals: Deal[];
+  propensityBuckets: PropensityBucket[] | undefined;
+}) => {
+  const { dealStages, dealPipelineStatuses } = useConfigurationContext();
+  const { refetch } = useListContext<Deal>();
   const dataProvider = useDataProvider();
+  const propensityMap = useDealPropensityMap();
+
+  // Apply the client-side propensity post-filter
+  const filteredDeals = useMemo(
+    () =>
+      filterDealsByPropensity(
+        deals,
+        propensityBuckets,
+        dealPipelineStatuses,
+        propensityMap,
+      ),
+    [deals, propensityBuckets, dealPipelineStatuses, propensityMap],
+  );
 
   const [dealsByStage, setDealsByStage] = useState<DealsByStage>(
     getDealsByStage([], dealStages),
   );
 
   useEffect(() => {
-    if (unorderedDeals) {
-      const newDealsByStage = getDealsByStage(unorderedDeals, dealStages);
-      if (!isEqual(newDealsByStage, dealsByStage)) {
-        setDealsByStage(newDealsByStage);
-      }
+    const newDealsByStage = getDealsByStage(filteredDeals, dealStages);
+    if (!isEqual(newDealsByStage, dealsByStage)) {
+      setDealsByStage(newDealsByStage);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unorderedDeals]);
-
-  if (isPending) return null;
+  }, [filteredDeals]);
 
   const onDragEnd: OnDragEndResponder = (result) => {
     const { destination, source } = result;
@@ -72,19 +121,17 @@ export const DealListContent = () => {
   };
 
   return (
-    <DealPropensityProvider deals={unorderedDeals ?? []}>
-      <DragDropContext onDragEnd={onDragEnd}>
-        <div className="flex gap-4">
-          {dealStages.map((stage) => (
-            <DealColumn
-              stage={stage.value}
-              deals={dealsByStage[stage.value]}
-              key={stage.value}
-            />
-          ))}
-        </div>
-      </DragDropContext>
-    </DealPropensityProvider>
+    <DragDropContext onDragEnd={onDragEnd}>
+      <div className="flex gap-4">
+        {dealStages.map((stage) => (
+          <DealColumn
+            stage={stage.value}
+            deals={dealsByStage[stage.value]}
+            key={stage.value}
+          />
+        ))}
+      </div>
+    </DragDropContext>
   );
 };
 

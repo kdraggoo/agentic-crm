@@ -28,6 +28,7 @@ import { DealEmpty } from "./DealEmpty";
 import { DealListContent } from "./DealListContent";
 import { DealShow } from "./DealShow";
 import { OnlyMineInput } from "./OnlyMineInput";
+import { PROPENSITY_BUCKET_CHOICES } from "./propensityFilterUtils";
 
 const DealList = () => {
   const { identity } = useGetIdentity();
@@ -68,6 +69,15 @@ const DealList = () => {
         optionValue="value"
       />
     </WrapperField>,
+    <AutocompleteArrayInput
+      source="propensity_bucket"
+      label={false}
+      placeholder={translate("resources.deals.fields.propensity_override")}
+      choices={PROPENSITY_BUCKET_CHOICES}
+      optionText="name"
+      optionValue="id"
+      alwaysOn
+    />,
     <DateRangeFilterInput
       source="expected_closing_date"
       label="resources.deals.fields.expected_closing_date"
