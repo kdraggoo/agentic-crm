@@ -31,6 +31,18 @@ export const useDealPropensity = (
 };
 
 /**
+ * Returns the full propensity map. Used by the propensity post-filter to
+ * resolve each deal's effective bucket without individual hook calls.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export const useDealPropensityMap = (): Map<
+  string | number,
+  PropensityResult
+> => {
+  return useContext(DealPropensityContext).byDealId;
+};
+
+/**
  * Fetches the per-deal signals (latest deal note, latest contact note on a
  * linked contact, latest task on a linked contact) in bulk and computes the
  * score for every active deal. Child DealCards read the result from context.

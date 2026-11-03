@@ -150,12 +150,13 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **Where:** `crm/deals/DealList.tsx`, `DealListContent.tsx` (drag logic, `@hello-pangea/dnd`), `DealColumn.tsx`, `DealCard.tsx`, `DealPropensityBadge.tsx`, `DealPropensityTooltip.tsx`, `DealPropensityContext.tsx`, `stages.ts` (deals with unknown stage go to first column).
 - **Config:** `dealStages`, `dealPipelineStatuses`, `currency`.
 - **Demo mode:** works.
-- **Related:** F-SET-02, F-SET-03, F-DEAL-07.
+- **Related:** F-SET-02, F-SET-03, F-DEAL-07, F-DEAL-08.
 
 ### F-DEAL-02 Deal search and filters
-- **What:** Always-on search (name, description, and category labels), filters by company and categories (any-of); admins get an account manager picker, non-admins an "Only deals I manage" switch.
-- **Where:** `crm/deals/DealList.tsx`, `OnlyMineInput.tsx`, `crm/sales/AccountManagerInput.tsx`, `crm/providers/supabase/searchDealCategories.ts`.
+- **What:** Always-on search (name, description, and category labels), filters by company and categories (any-of), and a "Propensity to buy" multi-select post-filter (Low/Medium/High, F-DEAL-08); admins get an account manager picker, non-admins an "Only deals I manage" switch.
+- **Where:** `crm/deals/DealList.tsx`, `OnlyMineInput.tsx`, `crm/sales/AccountManagerInput.tsx`, `crm/providers/supabase/searchDealCategories.ts`, `crm/deals/propensityFilterUtils.ts`.
 - **Demo mode:** works.
+- **Related:** F-DEAL-08.
 
 ### F-DEAL-03 Create / edit deal
 - **What:** Modal dialog (routes `/deals/create`, `/deals/:id`): name (required), description, company, contacts (multi), categories (multi), amount, expected closing date (date only), stage, a "Propensity to buy" selector (Auto / Low / Medium / High; Auto = computed, F-DEAL-07), and a "Line items" section (F-PROD-02) for attaching products with quantity and editable unit price. A "Line items total" summary appears when items are present; the Budget (amount) field remains independent. New deals go to the top of their column.
@@ -184,7 +185,14 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **Where:** `crm/providers/commons/propensityScoring.ts` (helper + `scoreDeal`), `crm/providers/commons/propensityConstants.ts` (weights, thresholds), `crm/deals/DealCard.tsx`, `DealPropensityBadge.tsx`, `DealPropensityTooltip.tsx`, `DealPropensityContext.tsx` (per-card score lookup, batched signal fetches), `DealListContent.tsx` (provider wrap), `DealInputs.tsx` (override selector); migration `20261030120000_deals_propensity_override.sql` (adds `deals.propensity_override text` with CHECK constraint on `null|low|medium|high`).
 - **Config:** `dealStages`, `dealPipelineStatuses` (default: `won`, `lost`, `delayed`).
 - **Demo mode:** works (~10% of generated deals are pre-set to a manual override so the override UX is covered without a backend).
-- **Related:** F-DEAL-01, F-DEAL-03, F-DEAL-06, F-IMP-01.
+- **Related:** F-DEAL-01, F-DEAL-03, F-DEAL-06, F-DEAL-08, F-IMP-01.
+
+### F-DEAL-08 Propensity-to-buy filter
+- **What:** An always-on multi-select filter in the deals board filter bar with options Low, Medium, High. Selecting one or more buckets applies a client-side post-filter that hides deals whose effective propensity bucket (manual override wins over computed) does not match any selected bucket. Deals in non-scorable stages (`dealPipelineStatuses`: won, lost, delayed) are also hidden when any propensity filter is active. Column totals update to reflect only visible deals. Clearing the filter restores all deals. The filter key (`propensity_bucket`) is stripped from the API request by the data provider's `beforeGetList` callback.
+- **Where:** `crm/deals/DealList.tsx` (filter definition), `crm/deals/propensityFilterUtils.ts` (filter logic, choices, strip helper), `crm/deals/DealListContent.tsx` (post-filter application), `crm/providers/supabase/dataProvider.ts` and `crm/providers/fakerest/dataProvider.ts` (strip from API request).
+- **Config:** `dealPipelineStatuses` (stages excluded from scoring).
+- **Demo mode:** works.
+- **Related:** F-DEAL-01, F-DEAL-02, F-DEAL-07.
 
 ---
 
