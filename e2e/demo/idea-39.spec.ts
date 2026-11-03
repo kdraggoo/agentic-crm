@@ -174,10 +174,17 @@ test.describe("Propensity-to-buy filter on deals board", () => {
     // Wait for filter to take effect
     await expect(allCards).not.toHaveCount(initialCardCount);
 
-    // Clear the filter by deselecting the chosen option
-    await page.getByPlaceholder("Propensity to buy").click();
-    await page.getByRole("option", { name: "High", exact: true }).click();
-    await page.keyboard.press("Escape");
+    // Clear the filter by clicking the X button on the "High" badge.
+    // AutocompleteArrayInput removes selected items from the dropdown,
+    // so they can only be deselected via the badge's close button.
+    // The Badge is a <span> containing "High" text and a <button> with
+    // sr-only label "Remove". Scope to the filter input's parent container.
+    const filterInput = page.getByPlaceholder("Propensity to buy");
+    const filterContainer = filterInput.locator(".."); // the flex-wrap div
+    const highBadge = filterContainer
+      .locator("span")
+      .filter({ hasText: /^High$/ });
+    await highBadge.getByRole("button", { name: "Remove" }).click();
 
     // All deals should be restored
     await expect(allCards).toHaveCount(initialCardCount);
@@ -200,10 +207,9 @@ test.describe("Propensity-to-buy filter on deals board", () => {
     await page.getByRole("option", { name: "Low", exact: true }).click();
     await page.keyboard.press("Escape");
 
-    // Some "Low" deals should be visible and count should be less than initial
-    await expect(allCards.first()).toBeVisible();
+    // Wait for the debounced filter to take effect, then verify fewer deals
+    await expect(allCards).not.toHaveCount(initialCount);
     const filteredCount = await allCards.count();
-    expect(filteredCount).toBeLessThan(initialCount);
     expect(filteredCount).toBeGreaterThan(0);
   });
 });
