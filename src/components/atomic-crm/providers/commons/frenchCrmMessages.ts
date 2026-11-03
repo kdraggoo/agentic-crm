@@ -208,6 +208,14 @@ export const frenchCrmMessages = {
       },
       filters: {
         only_mine: "Seulement les affaires que je gère",
+        created_date: "Date de création",
+        this_month: "Ce mois-ci",
+        this_quarter: "Ce trimestre",
+        next_month: "Le mois prochain",
+        next_quarter: "Le trimestre prochain",
+        custom: "Personnalisé",
+        from: "Du",
+        to: "Au",
       },
       archived: {
         action: "Archiver",

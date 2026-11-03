@@ -2,12 +2,14 @@ import type { Spec } from "../po/schema.js";
 import type { BuildReport, TestReport } from "./agents.js";
 import { formatCheckResults, type CheckReport } from "./checks.js";
 import { formatCiResult, type CiResult } from "./ci.js";
+import type { DocsResult } from "./docs.js";
 import type { Review } from "./reviewer.js";
 
 /** What a pull request describes: a build that passed its local checks and review. */
 export interface PublishedBuild {
   testReport: TestReport;
   buildReport: BuildReport;
+  docs: DocsResult;
   checks: CheckReport;
   review: Review;
   /** Unset while GitHub CI is still running. */
@@ -34,7 +36,7 @@ export function pullRequestBody(
   spec: Spec,
   build: PublishedBuild,
 ): string {
-  const { testReport, buildReport, checks, review } = build;
+  const { testReport, buildReport, docs, checks, review } = build;
   const coverage = testReport.criteria.map((criterion) => {
     const text = spec.acceptance_criteria[criterion.number - 1] ?? "";
     const how = criterion.covered
@@ -67,6 +69,15 @@ export function pullRequestBody(
     "",
     "## Docs updated",
     list(buildReport.docs_updated),
+    "",
+    "## Documentation agent",
+    docs.summary,
+    "",
+    "Files updated:",
+    list(docs.updated.map((file) => `\`${file}\``)),
+    "",
+    "Left for a human:",
+    list(docs.gaps),
     "",
     "## Reviewer agent",
     review.findings.length > 0

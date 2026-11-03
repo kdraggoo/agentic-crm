@@ -153,9 +153,9 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **Related:** F-SET-02, F-SET-03, F-DEAL-07, F-DEAL-08.
 
 ### F-DEAL-02 Deal search and filters
-- **What:** Always-on search (name, description, and category labels), filters by company and categories (any-of), and a "Propensity to buy" multi-select post-filter (Low/Medium/High, F-DEAL-08); admins get an account manager picker, non-admins an "Only deals I manage" switch.
-- **Where:** `crm/deals/DealList.tsx`, `OnlyMineInput.tsx`, `crm/sales/AccountManagerInput.tsx`, `crm/providers/supabase/searchDealCategories.ts`, `crm/deals/propensityFilterUtils.ts`.
-- **Demo mode:** works.
+- **What:** Always-on search (name, description, and category labels), filters by company and categories (any-of) and a "Propensity to buy" multi-select post-filter (Low/Medium/High, F-DEAL-08); two date-range filters — "Expected closing date" and "Created date" — toggled via the FilterButton, each offering four preset buttons (This month, This quarter, Next month, Next quarter) and a Custom option with From/To date pickers; admins get an account manager picker, non-admins an "Only deals I manage" switch. Preset periods are computed at render time. The date range filters set `{source}@gte` / `{source}@lte` on the filter query. Date filters combine with other filters via AND.
+- **Where:** `crm/deals/DealList.tsx`, `DateRangeFilterInput.tsx`, `dateRangePresets.ts`, `OnlyMineInput.tsx`, `crm/sales/AccountManagerInput.tsx`, `crm/providers/supabase/searchDealCategories.ts`, `crm/deals/propensityFilterUtils.ts`.
+- **Demo mode:** works (first 10 generated deals forced into current month/quarter so presets return results).
 - **Related:** F-DEAL-08.
 
 ### F-DEAL-03 Create / edit deal

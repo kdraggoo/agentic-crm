@@ -11,6 +11,7 @@ import {
   type TestReport,
 } from "./agents.js";
 import { generateRegistry, runChecks } from "./checks.js";
+import { updateDocs } from "./docs.js";
 import { restoreDemoConfig } from "./guardrails.js";
 import { reviewSecurity } from "./security.js";
 import { failuresOnlyIn, rerunCi, waitForCi, type CiResult } from "./ci.js";
@@ -204,6 +205,7 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
   }
 
   let previousFindings: ReviewFinding[] | undefined;
+  const docsUpdated = new Set<string>();
   for (let attempt = 1; attempt <= MAX_BUILD_ATTEMPTS; attempt++) {
     await progress(
       `🔨 Build agent is implementing the spec (attempt ${attempt}/${MAX_BUILD_ATTEMPTS})…`,
@@ -282,14 +284,33 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
       continue;
     }
 
+    // Before the reviewers, so they read the documentation along with the code.
+    const reviewTask = formatSpec(spec);
+    const docs = await updateDocs(
+      dir,
+      {
+        task: reviewTask,
+        diff: await diffSince(dir, testCommit),
+        lockedFiles,
+      },
+      progress,
+    );
+    costUsd += docs.costUsd;
+    docs.updated.forEach((file) => docsUpdated.add(file));
+
     await progress("🧐 Reviewer agent is checking the diff…");
     const diff = await diffSince(dir, testCommit);
-    const reviewTask = formatSpec(spec);
     const reviewed = await runReviewer(dir, {
       task: reviewTask,
       diff,
       flags: automaticFlags(diff),
-      buildReport: report,
+      buildReport: {
+        summary: report.summary,
+        reviewer_notes: [
+          ...report.reviewer_notes,
+          ...docs.gaps.map((gap) => `Documentation agent: ${gap}`),
+        ],
+      },
       previousFindings: previousFindings?.filter(
         (finding) => finding.category !== "security",
       ),
@@ -324,6 +345,7 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
     const published: PublishedBuild = {
       testReport,
       buildReport: report,
+      docs: { ...docs, updated: [...docsUpdated] },
       checks,
       review: {
         findings: findings.filter((finding) => finding.severity === "note"),

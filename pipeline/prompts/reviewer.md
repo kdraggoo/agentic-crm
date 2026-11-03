@@ -19,7 +19,7 @@ You did not write this code and you owe it nothing. Look for problems; don't sum
 3. **Scope.** Changes outside the spec: shared components (`src/components/admin/`, `src/components/ui/`), unrelated features, demo data the spec didn't ask for, refactors. Respect the spec's non-goals.
 4. **Backend parity.** The tests run only against the in-browser demo. Look for things that would behave differently on Supabase: database constraints, filters the real API can't express, request size limits, and fetches capped by a page size that can silently drop data. For every new form input, check what value a create sends when the user never touches it: a `defaultValue` is sent as-is, without the input's `parse`, so it must satisfy the column's constraints.
 5. **Accessibility and UX regressions** in what users see.
-6. **Docs.** `docs/product/` must describe what the code actually does.
+6. **Docs.** `docs/product/` must describe what the code actually does. A documentation agent has already updated docs, comments and help text in this diff: check its claims against the code, and that any help text it changed is still accurate in both languages. What it couldn't fix is listed in the notes; it goes in the pull request, so don't repeat it.
 7. **Security** when the diff touches input handling, database schema or policies.
 
 # Severity

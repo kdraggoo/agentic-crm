@@ -204,6 +204,14 @@ export const englishCrmMessages = {
       },
       filters: {
         only_mine: "Only deals I manage",
+        created_date: "Created date",
+        this_month: "This month",
+        this_quarter: "This quarter",
+        next_month: "Next month",
+        next_quarter: "Next quarter",
+        custom: "Custom",
+        from: "From",
+        to: "To",
       },
       archived: {
         action: "Archive",

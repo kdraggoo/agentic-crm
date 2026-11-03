@@ -14,12 +14,12 @@
     "@octokit/rest": "^21.1.1",
     "discord.js": "^14.18.0",
     "dotenv": "^16.4.7",
+    "typescript": "^5.8.2",
     "zod": "^3.24.2",
     "zod-to-json-schema": "^3.24.5"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",
-    "tsx": "^4.19.3",
-    "typescript": "^5.8.2"
+    "tsx": "^4.19.3"
   }
 }
