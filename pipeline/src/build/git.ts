@@ -262,6 +262,104 @@ export async function unpark(dir: string, parkedSha: string): Promise<void> {
 }
 
 /**
+ * Files that would conflict if the working tree, as it stands, merged with the latest
+ * main. GitHub runs no pull request workflows on a branch that conflicts.
+ */
+export async function conflictsWithMain(dir: string): Promise<string[]> {
+  await runOrThrow("git", ["fetch", "--quiet", "origin", "main"], { cwd: dir });
+  const base = (
+    await runOrThrow("git", ["merge-base", "origin/main", "HEAD"], { cwd: dir })
+  ).trim();
+  const tree = await snapshotWorkingTree(dir);
+  const merged = await run(
+    "git",
+    [
+      "merge-tree",
+      "--write-tree",
+      "--name-only",
+      `--merge-base=${base}`,
+      "origin/main",
+      tree,
+    ],
+    { cwd: dir },
+  );
+  if (merged.code === 0) return [];
+  if (merged.code !== 1) {
+    throw new Error(`git merge-tree failed:\n${merged.output}`);
+  }
+  // The merged tree's id, then the conflicted files, then a blank line and the messages.
+  const [, ...lines] = merged.output.split("\n");
+  const end = lines.indexOf("");
+  return end === -1 ? lines : lines.slice(0, end);
+}
+
+/**
+ * Replays the locked tests on the latest main and puts all the work since them back as
+ * uncommitted changes, with conflict markers where it clashes. A rebase rather than a
+ * merge, so the last commit touching the tests stays a test commit and comparing
+ * against it shows only this idea's changes. Returns null, with the work back as it
+ * was, when the tests themselves conflict.
+ */
+export async function moveOntoMain(
+  dir: string,
+  testCommit: string,
+): Promise<{ testCommit: string; conflicted: string[] } | null> {
+  await runOrThrow("git", ["reset", "--quiet", "--soft", testCommit], {
+    cwd: dir,
+  });
+  await park(dir);
+  const parked = (
+    await runOrThrow("git", ["rev-parse", "HEAD"], { cwd: dir })
+  ).trim();
+  await runOrThrow("git", ["reset", "--quiet", "--hard", testCommit], {
+    cwd: dir,
+  });
+  const rebased = await run(
+    "git",
+    [...GIT_AUTHOR, "rebase", "--quiet", "origin/main"],
+    { cwd: dir },
+  );
+  if (rebased.code !== 0) {
+    await runOrThrow("git", ["rebase", "--abort"], { cwd: dir });
+    await unpark(dir, parked);
+    return null;
+  }
+  const moved = (
+    await runOrThrow("git", ["rev-parse", "HEAD"], { cwd: dir })
+  ).trim();
+  const picked = await run("git", ["cherry-pick", "--no-commit", parked], {
+    cwd: dir,
+  });
+  const conflicted = (
+    await runOrThrow("git", ["diff", "--name-only", "--diff-filter=U"], {
+      cwd: dir,
+    })
+  )
+    .split("\n")
+    .filter(Boolean);
+  if (picked.code !== 0 && conflicted.length === 0) {
+    throw new Error(`git cherry-pick failed:\n${picked.output}`);
+  }
+  await runOrThrow("git", ["reset", "--quiet"], { cwd: dir });
+  return { testCommit: moved, conflicted };
+}
+
+/** Which of these files still have conflict markers. */
+export async function filesWithConflictMarkers(
+  dir: string,
+  files: string[],
+): Promise<string[]> {
+  if (files.length === 0) return [];
+  const found = await run(
+    "git",
+    ["grep", "-lE", "--untracked", "^(<<<<<<<|>>>>>>>) ", "--", ...files],
+    { cwd: dir },
+  );
+  if (found.code > 1) throw new Error(`git grep failed:\n${found.output}`);
+  return found.output.split("\n").filter(Boolean);
+}
+
+/**
  * Deletes files the build agent asked to remove, since its sandbox can't. Only plain
  * files inside the worktree qualify (never `.git` or a protected path); returns the
  * paths actually deleted.
