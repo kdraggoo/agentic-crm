@@ -77,7 +77,7 @@ test.describe("Dashboard drill-down to deals board", () => {
 
     // The "from" and "to" date inputs should be visible with values set
     const fromInput = page.getByLabel("From");
-    const toInput = page.getByLabel("To");
+    const toInput = page.getByRole("textbox", { name: "To" });
     await expect(fromInput).toBeVisible();
     await expect(toInput).toBeVisible();
 
