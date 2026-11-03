@@ -177,13 +177,15 @@ test.describe("Propensity-to-buy filter on deals board", () => {
     // Clear the filter by clicking the X button on the "High" badge.
     // AutocompleteArrayInput removes selected items from the dropdown,
     // so they can only be deselected via the badge's close button.
-    // The Badge is a <span> containing "High" text and a <button> with
-    // sr-only label "Remove". Scope to the filter input's parent container.
+    // The Badge is a <span data-slot="badge"> containing "High" text and a
+    // <button> with sr-only label "Remove". The badge's textContent includes
+    // both "High" and the sr-only "Remove" text, so use substring match.
+    // Scope to the filter input's parent container.
     const filterInput = page.getByPlaceholder("Propensity to buy");
     const filterContainer = filterInput.locator(".."); // the flex-wrap div
     const highBadge = filterContainer
-      .locator("span")
-      .filter({ hasText: /^High$/ });
+      .locator('[data-slot="badge"]')
+      .filter({ hasText: "High" });
     await highBadge.getByRole("button", { name: "Remove" }).click();
 
     // All deals should be restored
