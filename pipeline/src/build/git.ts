@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { lstat, rm } from "node:fs/promises";
+import { lstat, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { REPO_DIR, WORKTREES_DIR } from "../config.js";
 import { run, runOrThrow } from "./run.js";
@@ -163,6 +164,48 @@ export async function restorePaths(
   paths: string[],
 ): Promise<void> {
   await runOrThrow("git", ["checkout", commit, "--", ...paths], { cwd: dir });
+}
+
+/**
+ * Records the working tree, untracked files included, as a git tree, without touching
+ * the index or the history. Returns the tree's id.
+ */
+export async function snapshotWorkingTree(dir: string): Promise<string> {
+  const scratch = await mkdtemp(path.join(tmpdir(), "pipeline-snapshot-"));
+  const env = { ...process.env, GIT_INDEX_FILE: path.join(scratch, "index") };
+  try {
+    await runOrThrow("git", ["read-tree", "HEAD"], { cwd: dir, env });
+    await runOrThrow("git", ["add", "-A"], { cwd: dir, env });
+    return (await runOrThrow("git", ["write-tree"], { cwd: dir, env })).trim();
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+}
+
+/** Files that differ between two snapshots. */
+export async function filesChangedBetween(
+  dir: string,
+  before: string,
+  after: string,
+): Promise<string[]> {
+  const output = await runOrThrow(
+    "git",
+    ["diff", "--name-only", "--no-renames", before, after],
+    { cwd: dir },
+  );
+  return output.split("\n").filter(Boolean);
+}
+
+/** A file's content in a snapshot, or null when it isn't there. */
+export async function fileInSnapshot(
+  dir: string,
+  snapshot: string,
+  file: string,
+): Promise<string | null> {
+  const result = await run("git", ["show", `${snapshot}:${file}`], {
+    cwd: dir,
+  });
+  return result.code === 0 ? result.output : null;
 }
 
 export async function push(dir: string, branch: string): Promise<void> {
