@@ -632,6 +632,10 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/deals/dateRangePresets.ts",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/deals/OnlyMineInput.tsx",
           "type": "registry:component"
         },
@@ -693,6 +697,10 @@
         },
         {
           "path": "src/components/atomic-crm/deals/DealArchivedList.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/deals/DateRangeFilterInput.tsx",
           "type": "registry:component"
         },
         {

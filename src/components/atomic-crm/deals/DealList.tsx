@@ -20,6 +20,7 @@ import { DataImportButton } from "../dataImport/DataImportButton";
 import { useConfigurationContext } from "../root/ConfigurationContext";
 import { TopToolbar } from "../layout/TopToolbar";
 import { AccountManagerInput } from "../sales/AccountManagerInput";
+import { DateRangeFilterInput } from "./DateRangeFilterInput";
 import { DealArchivedList } from "./DealArchivedList";
 import { DealCreate } from "./DealCreate";
 import { DealEdit } from "./DealEdit";
@@ -67,6 +68,15 @@ const DealList = () => {
         optionValue="value"
       />
     </WrapperField>,
+    <DateRangeFilterInput
+      source="expected_closing_date"
+      label="resources.deals.fields.expected_closing_date"
+    />,
+    <DateRangeFilterInput
+      source="created_at"
+      label="resources.deals.filters.created_date"
+      isTimestamp
+    />,
     ...(isPending
       ? []
       : [

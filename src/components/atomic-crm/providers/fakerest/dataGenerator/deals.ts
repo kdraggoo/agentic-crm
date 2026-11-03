@@ -1,4 +1,10 @@
-import { add } from "date-fns";
+import {
+  add,
+  startOfMonth,
+  endOfMonth,
+  startOfQuarter,
+  endOfQuarter,
+} from "date-fns";
 import { datatype, lorem, random } from "faker/locale/en_US";
 
 import {
@@ -18,6 +24,12 @@ const OVERRIDE_FRACTION = 0.1;
 const OVERRIDE_BUCKETS: PropensityBucket[] = ["low", "medium", "high"];
 
 export const generateDeals = (db: Db): Deal[] => {
+  const now = new Date();
+  const currentMonthStart = startOfMonth(now);
+  const currentMonthEnd = endOfMonth(now);
+  const currentQuarterStart = startOfQuarter(now);
+  const currentQuarterEnd = endOfQuarter(now);
+
   const deals = Array.from(Array(50).keys()).map((id) => {
     const company = random.arrayElement(db.companies);
     company.nb_deals = (company.nb_deals ?? 0) + 1;
@@ -26,14 +38,36 @@ export const generateDeals = (db: Db): Deal[] => {
       datatype.number({ min: 1, max: 3 }),
     );
     const lowercaseName = lorem.words();
-    const created_at = randomDate(new Date(company.created_at)).toISOString();
 
-    const expected_closing_date = randomDate(
-      new Date(created_at),
-      add(new Date(created_at), { months: 6 }),
-    )
-      .toISOString()
-      .split("T")[0];
+    // Force some deals into current periods so date filter presets return
+    // results in the demo
+    let created_at: string;
+    let expected_closing_date: string;
+
+    if (id < 5) {
+      // First 5 deals: created_at and expected_closing_date in current month
+      created_at = randomDate(currentMonthStart, currentMonthEnd).toISOString();
+      expected_closing_date = randomDate(currentMonthStart, currentMonthEnd)
+        .toISOString()
+        .split("T")[0];
+    } else if (id < 10) {
+      // Next 5 deals: expected_closing_date in current quarter
+      created_at = randomDate(
+        currentQuarterStart,
+        currentQuarterEnd,
+      ).toISOString();
+      expected_closing_date = randomDate(currentQuarterStart, currentQuarterEnd)
+        .toISOString()
+        .split("T")[0];
+    } else {
+      created_at = randomDate(new Date(company.created_at)).toISOString();
+      expected_closing_date = randomDate(
+        new Date(created_at),
+        add(new Date(created_at), { months: 6 }),
+      )
+        .toISOString()
+        .split("T")[0];
+    }
 
     const propensity_override =
       datatype.number({ min: 0, max: 100 }) < OVERRIDE_FRACTION * 100
