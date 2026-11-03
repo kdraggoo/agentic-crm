@@ -41,6 +41,12 @@ export const BUILD_TIMEOUT_MS = Number(
   process.env.BUILD_TIMEOUT_MS ?? 45 * 60_000,
 );
 
+/** Model and time limit for the documentation agent. */
+export const DOCS_MODEL = process.env.DOCS_MODEL ?? "sonnet";
+export const DOCS_TIMEOUT_MS = Number(
+  process.env.DOCS_TIMEOUT_MS ?? 15 * 60_000,
+);
+
 /** Model and time limit for the reviewer agent that checks each build's diff. */
 export const REVIEW_MODEL = process.env.REVIEW_MODEL ?? "opus";
 export const REVIEW_TIMEOUT_MS = Number(
