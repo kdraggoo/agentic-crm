@@ -16,6 +16,8 @@ const POLL_MS = 30_000;
 /** Workflows can register a little apart; wait this long after all runs finish. */
 const SETTLE_MS = 30_000;
 const LOG_LINES = 150;
+/** Runs register within moments of a push, so none by now means none are coming. */
+const START_MS = 5 * 60_000;
 const RERUN_START_MS = 120_000;
 
 /**
@@ -26,11 +28,17 @@ const RERUN_START_MS = 120_000;
 export async function waitForCi(sha: string): Promise<CiResult> {
   const octokit = new Octokit({ auth: githubToken() });
   const repo = githubRepo();
-  const deadline = Date.now() + CI_TIMEOUT_MS;
+  const startedAt = Date.now();
+  const deadline = startedAt + CI_TIMEOUT_MS;
   let finishedAt: number | undefined;
 
   while (Date.now() < deadline) {
     const runs = await runsFor(octokit, repo, sha);
+    if (runs.length === 0 && Date.now() - startedAt >= START_MS) {
+      throw new Error(
+        `GitHub CI never started on ${sha.slice(0, 7)}. The usual cause is a conflict with main, since GitHub runs no pull request workflows on a conflicted branch.`,
+      );
+    }
     const allDone =
       runs.length > 0 && runs.every((run) => run.status === "completed");
     if (!allDone) {

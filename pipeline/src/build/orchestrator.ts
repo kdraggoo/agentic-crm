@@ -10,16 +10,19 @@ import {
   type TestDispute,
   type TestReport,
 } from "./agents.js";
-import { generateRegistry, runChecks } from "./checks.js";
+import { generateRegistry, installDependencies, runChecks } from "./checks.js";
 import { updateDocs } from "./docs.js";
 import { restoreDemoConfig } from "./guardrails.js";
 import { reviewSecurity } from "./security.js";
 import { failuresOnlyIn, rerunCi, waitForCi, type CiResult } from "./ci.js";
 import {
   commitAll,
+  conflictsWithMain,
   deleteFiles,
   filesChangedSince,
+  filesWithConflictMarkers,
   headCommit,
+  moveOntoMain,
   push,
   restorePaths,
 } from "./git.js";
@@ -187,7 +190,8 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
     locked = await writeTests(issueNumber, request.title, spec, progress);
   }
   costUsd += locked.costUsd;
-  const { dir, branch, testFile, testCommit, testReport } = locked;
+  const { dir, branch, testFile, testReport } = locked;
+  let { testCommit } = locked;
   const at: Located = { branch, worktree: dir, costUsd };
   const fail = (reason: string): BuildOutcome => ({
     ...at,
@@ -206,6 +210,7 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
 
   let previousFindings: ReviewFinding[] | undefined;
   const docsUpdated = new Set<string>();
+  let lockfileConflicted = false;
   for (let attempt = 1; attempt <= MAX_BUILD_ATTEMPTS; attempt++) {
     await progress(
       `🔨 Build agent is implementing the spec (attempt ${attempt}/${MAX_BUILD_ATTEMPTS})…`,
@@ -275,12 +280,45 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
       continue;
     }
 
+    const unresolved = await filesWithConflictMarkers(dir, changed);
+    if (unresolved.length > 0) {
+      previousFailure = `These files still have conflict markers from moving your work onto main: ${unresolved.join(", ")}. Resolve them, keeping both your change and main's.`;
+      continue;
+    }
+    if (lockfileConflicted) {
+      await installDependencies(dir);
+      lockfileConflicted = false;
+    }
+
     await progress("🔍 Running the full checks…");
     const checks = await runChecks(dir);
     if (!checks.passed) {
       const failure = checks.failure!;
       await progress(`❌ Check failed: ${failure.name}`);
       previousFailure = `The "${failure.name}" check failed:\n${failure.output}`;
+      continue;
+    }
+
+    // Before the reviewers, so they read the code that will actually merge.
+    const conflicts = await conflictsWithMain(dir);
+    if (conflicts.length > 0) {
+      await progress(
+        `🔀 This work conflicts with the latest main in ${conflicts.join(", ")}. Moving it onto main…`,
+      );
+      const moved = await moveOntoMain(dir, testCommit);
+      if (!moved) {
+        return fail(
+          `The locked tests conflict with the latest main in ${conflicts.join(", ")}, so the work can't move onto it. A human needs to resolve this in the branch.`,
+        );
+      }
+      testCommit = moved.testCommit;
+      // A conflicted lockfile can't install until the build agent has resolved it.
+      lockfileConflicted = moved.conflicted.includes("package-lock.json");
+      if (!lockfileConflicted) await installDependencies(dir);
+      previousFailure = [
+        `Main changed while you worked, and your change conflicts with it. Your work is back in the working tree on top of the latest main, with conflict markers in: ${moved.conflicted.join(", ")}.`,
+        "Resolve each one, keeping both your change and main's unless the spec says otherwise, and remove every marker. Then check that the two changes work together.",
+      ].join("\n\n");
       continue;
     }
 
