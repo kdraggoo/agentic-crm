@@ -294,11 +294,11 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **Demo mode:** works.
 
 ### F-DASH-03 Upcoming deal revenue chart
-- **What:** Bar chart of deal amounts per month (last 6 months by creation date): won, pending (not won/lost) and lost. Shown only if any deal exists.
-- **Where:** `crm/dashboard/DealsChart.tsx` (stage values `won`/`lost` hardcoded; labels from config).
+- **What:** Bar chart of deal amounts per month (last 6 months by creation date): won, pending (not won/lost) and lost. Shown only if any deal exists. Clicking any bar navigates to the deals board filtered by `created_at` date range for that month (uses `created_at@gte` and `created_at@lt` timestamp-mode filters). Bars show cursor:pointer on hover and carry aria-labels ("View deals for <month>"). Filter is encoded in the URL hash for shareability. When no deals match the filter the board shows empty columns.
+- **Where:** `crm/dashboard/DealsChart.tsx`, `dealsChartDrilldown.ts`, `MonthOverlayLayer.tsx` (stage values `won`/`lost` hardcoded; labels from config).
 - **Config:** `currency`, `dealStages` labels.
 - **Demo mode:** works.
-- **Related:** F-DASH-07.
+- **Related:** F-DASH-07, F-DEAL-01.
 
 ### F-DASH-04 Latest activity
 - **What:** Team-wide activity log (10 per page) on desktop and mobile dashboards.
@@ -318,8 +318,8 @@ Schema source of truth: `schemas/01_tables.sql`, `03_views.sql`. Resources regis
 - **Demo mode:** demo only.
 
 ### F-DASH-07 Sales funnel
-- **What:** Desktop dashboard card listing each active stage from `dealStages` (in configured order) with deal count, total amount in the configured currency, and a horizontal bar whose width is proportional to the count of the largest stage. Excludes stages flagged in `dealPipelineStatuses` (default: `won`, `lost`, `delayed`) and archived deals. Empty state when every included stage has 0 deals: `No active deals`. Not rendered on the mobile dashboard.
-- **Where:** `crm/dashboard/SalesFunnel.tsx`, placed in the grid by `crm/dashboard/Dashboard.tsx`.
+- **What:** Desktop dashboard card listing each active stage from `dealStages` (in configured order) with deal count, total amount in the configured currency, and a horizontal bar whose width is proportional to the count of the largest stage. Excludes stages flagged in `dealPipelineStatuses` (default: `won`, `lost`, `delayed`) and archived deals. Empty state when every included stage has 0 deals: `No active deals`. Not rendered on the mobile dashboard. Clicking a stage row navigates to the deals board and scrolls the corresponding stage column into view. Rows show cursor:pointer on hover and carry aria-labels ("View deals in <stage>"). No filter is applied; stages are already visible as Kanban columns.
+- **Where:** `crm/dashboard/SalesFunnel.tsx`, `crm/deals/DealListContent.tsx` (scrollToStage param), `crm/deals/DealColumn.tsx` (data-stage attribute), placed in the grid by `crm/dashboard/Dashboard.tsx`.
 - **Config:** `dealStages`, `dealPipelineStatuses`, `currency`.
 - **Demo mode:** works.
 - **Related:** F-DASH-03, F-DEAL-01, F-SET-02.

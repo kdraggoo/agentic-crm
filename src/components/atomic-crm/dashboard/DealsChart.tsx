@@ -2,9 +2,16 @@ import { ResponsiveBar } from "@nivo/bar";
 import { format, startOfMonth } from "date-fns";
 import { TrendingUp } from "lucide-react";
 import { useGetList, useTranslate } from "ra-core";
-import { memo, useMemo } from "react";
+import { memo, type MouseEvent, useCallback, useMemo, useRef } from "react";
+import { useNavigate } from "react-router";
 
+import { nextDay } from "../deals/dateRangePresets";
 import { findDealLabel } from "../deals/dealUtils";
+import {
+  buildDealsChartNavigationUrl,
+  type MonthBarDatum,
+} from "./dealsChartDrilldown";
+import { createAriaLabelLayer } from "./MonthOverlayLayer";
 import { useConfigurationContext } from "../root/ConfigurationContext";
 import type { Deal } from "../types";
 
@@ -21,8 +28,16 @@ const threeMonthsAgo = new Date(
 
 const DEFAULT_LOCALE = "en-US";
 
+/** Chart margins — must stay in sync with the ResponsiveBar `margin` prop. */
+const CHART_MARGIN = { top: 30, right: 50, bottom: 30, left: 0 };
+
+/** Inner chart height used for the aria-label overlay. */
+const CHART_INNER_HEIGHT = 400 - CHART_MARGIN.top - CHART_MARGIN.bottom;
+
 export const DealsChart = memo(() => {
   const translate = useTranslate();
+  const navigate = useNavigate();
+  const chartRef = useRef<HTMLDivElement>(null);
   const { dealStages, currency } = useConfigurationContext();
   const acceptedLanguages = navigator
     ? navigator.languages || [navigator.language]
@@ -42,42 +57,97 @@ export const DealsChart = memo(() => {
   });
   const months = useMemo(() => {
     if (!data) return [];
-    const dealsByMonth = data.reduce((acc, deal) => {
-      const month = startOfMonth(deal.created_at ?? new Date()).toISOString();
-      if (!acc[month]) {
-        acc[month] = [];
-      }
-      acc[month].push(deal);
-      return acc;
-    }, {} as any);
+    const dealsByMonth = data.reduce(
+      (acc, deal) => {
+        const month = startOfMonth(deal.created_at ?? new Date()).toISOString();
+        if (!acc[month]) {
+          acc[month] = [];
+        }
+        acc[month].push(deal);
+        return acc;
+      },
+      {} as Record<string, Deal[]>,
+    );
 
-    const amountByMonth = Object.keys(dealsByMonth).map((month) => {
-      return {
-        date: format(month, "MMM"),
-        won: dealsByMonth[month]
-          .filter((deal: Deal) => deal.stage === "won")
-          .reduce((acc: number, deal: Deal) => {
-            acc += deal.amount;
-            return acc;
-          }, 0),
-        pending: dealsByMonth[month]
-          .filter((deal: Deal) => !["won", "lost"].includes(deal.stage))
-          .reduce((acc: number, deal: Deal) => {
-            // @ts-expect-error - multiplier type issue
-            acc += deal.amount * multiplier[deal.stage];
-            return acc;
-          }, 0),
-        lost: dealsByMonth[month]
-          .filter((deal: Deal) => deal.stage === "lost")
-          .reduce((acc: number, deal: Deal) => {
-            acc -= deal.amount;
-            return acc;
-          }, 0),
-      };
-    });
+    const amountByMonth: MonthBarDatum[] = Object.keys(dealsByMonth).map(
+      (month) => {
+        const d = new Date(month);
+        const lastDay = new Date(
+          d.getFullYear(),
+          d.getMonth() + 1,
+          0,
+        ).getDate();
+        const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+        const to = nextDay(
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
+        );
+        return {
+          date: format(month, "MMM"),
+          monthName: format(month, "MMMM"),
+          monthFrom: from,
+          monthTo: to,
+          won: dealsByMonth[month]
+            .filter((deal: Deal) => deal.stage === "won")
+            .reduce((acc: number, deal: Deal) => {
+              acc += deal.amount;
+              return acc;
+            }, 0),
+          pending: dealsByMonth[month]
+            .filter((deal: Deal) => !["won", "lost"].includes(deal.stage))
+            .reduce((acc: number, deal: Deal) => {
+              // @ts-expect-error - multiplier type issue
+              acc += deal.amount * multiplier[deal.stage];
+              return acc;
+            }, 0),
+          lost: dealsByMonth[month]
+            .filter((deal: Deal) => deal.stage === "lost")
+            .reduce((acc: number, deal: Deal) => {
+              acc -= deal.amount;
+              return acc;
+            }, 0),
+        };
+      },
+    );
 
     return amountByMonth;
   }, [data]);
+
+  /**
+   * Click handler on the wrapper div. Maps the click's x-coordinate
+   * to a month column so any click inside the chart area (on a bar
+   * or in the gaps between bars) navigates to the corresponding
+   * month on the deals board.
+   */
+  const handleChartClick = useCallback(
+    (e: MouseEvent<HTMLDivElement>) => {
+      if (months.length === 0) return;
+
+      const svg = chartRef.current?.querySelector("svg");
+      if (!svg) return;
+      const svgRect = svg.getBoundingClientRect();
+      const clickX = e.clientX - svgRect.left - CHART_MARGIN.left;
+      const innerWidth = svgRect.width - CHART_MARGIN.left - CHART_MARGIN.right;
+      if (innerWidth <= 0) return;
+      const bandWidth = innerWidth / months.length;
+      const monthIdx = Math.min(
+        Math.max(Math.floor(clickX / bandWidth), 0),
+        months.length - 1,
+      );
+      navigate(buildDealsChartNavigationUrl(months[monthIdx]));
+    },
+    [months, navigate],
+  );
+
+  const getBarAriaLabel = useCallback(
+    (monthName: string) =>
+      translate("crm.dashboard.view_deals_for_month", { month: monthName }),
+    [translate],
+  );
+
+  const ariaLabelLayer = useMemo(
+    () => createAriaLabelLayer(getBarAriaLabel, CHART_INNER_HEIGHT),
+    [getBarAriaLabel],
+  );
 
   if (isPending) return null; // FIXME return skeleton instead
   const range = months.reduce(
@@ -98,13 +168,13 @@ export const DealsChart = memo(() => {
           {translate("crm.dashboard.deals_chart")}
         </h2>
       </div>
-      <div className="h-[400px]">
+      <div ref={chartRef} className="h-[400px]" onClick={handleChartClick}>
         <ResponsiveBar
           data={months}
           indexBy="date"
           keys={["won", "pending", "lost"]}
           colors={["#61cdbb", "#97e3d5", "#e25c3b"]}
-          margin={{ top: 30, right: 50, bottom: 30, left: 0 }}
+          margin={CHART_MARGIN}
           padding={0.3}
           valueScale={{
             type: "linear",
@@ -115,6 +185,7 @@ export const DealsChart = memo(() => {
           enableGridX={true}
           enableGridY={false}
           enableLabel={false}
+          animate={false}
           tooltip={({ value, indexValue }) => (
             <div className="p-2 bg-secondary rounded shadow inline-flex items-center gap-1 text-secondary-foreground">
               <strong>{indexValue}: </strong>&nbsp;{value > 0 ? "+" : ""}
@@ -124,6 +195,15 @@ export const DealsChart = memo(() => {
               })}
             </div>
           )}
+          layers={[
+            "grid",
+            "axes",
+            "bars",
+            ariaLabelLayer,
+            "markers",
+            "legends",
+            "annotations",
+          ]}
           axisTop={{
             tickSize: 0,
             tickPadding: 12,
@@ -144,7 +224,8 @@ export const DealsChart = memo(() => {
             legendPosition: "middle",
             legendOffset: 50,
             tickSize: 0,
-            tickPadding: 12,
+            tickPadding: 0,
+            format: () => "",
             style: {
               ticks: {
                 text: {
@@ -202,6 +283,11 @@ export const DealsChart = memo(() => {
           }
         />
       </div>
+      <style>{`
+        .h-\\[400px\\] svg rect[width] { cursor: pointer; }
+        .h-\\[400px\\] svg rect[data-testid] { pointer-events: none; }
+        .h-\\[400px\\] svg g[transform] > line { pointer-events: none; }
+      `}</style>
     </div>
   );
 });

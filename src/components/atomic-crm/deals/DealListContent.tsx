@@ -2,6 +2,7 @@ import { DragDropContext, type OnDragEndResponder } from "@hello-pangea/dnd";
 import isEqual from "lodash/isEqual";
 import { useDataProvider, useListContext, type DataProvider } from "ra-core";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 
 import { useConfigurationContext } from "../root/ConfigurationContext";
 import type { Deal, PropensityBucket } from "../types";
@@ -55,6 +56,33 @@ const DealListColumns = ({
   const { refetch } = useListContext<Deal>();
   const dataProvider = useDataProvider();
   const propensityMap = useDealPropensityMap();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Scroll to a stage column when navigating from the sales funnel
+  useEffect(() => {
+    const scrollToStage = searchParams.get("scrollToStage");
+    if (!scrollToStage) return;
+
+    // Remove the param so it doesn't persist on subsequent navigations
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("scrollToStage");
+        return next;
+      },
+      { replace: true },
+    );
+
+    // Defer to allow the DOM to render the columns
+    requestAnimationFrame(() => {
+      const el = document.querySelector(
+        `[data-stage="${CSS.escape(scrollToStage)}"]`,
+      );
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", inline: "center" });
+      }
+    });
+  }, [searchParams, setSearchParams]);
 
   // Apply the client-side propensity post-filter
   const filteredDeals = useMemo(
