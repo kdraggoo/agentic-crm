@@ -35,9 +35,9 @@ function showCursor(): void {
 
 /** Use this `test`: its page shows the cursor in the video. */
 export const test = base.extend({
-  page: async ({ page }, use) => {
+  page: async ({ page }, runTest) => {
     await page.addInitScript(showCursor);
-    await use(page);
+    await runTest(page);
   },
 });
 
