@@ -15,6 +15,7 @@ import { updateDocs } from "./docs.js";
 import { restoreDemoConfig } from "./guardrails.js";
 import { reviewSecurity } from "./security.js";
 import { failuresOnlyIn, rerunCi, waitForCi, type CiResult } from "./ci.js";
+import { recordDemo } from "./demo.js";
 import {
   commitAll,
   conflictsWithMain,
@@ -434,7 +435,18 @@ async function buildWithTests(request: BuildRequest): Promise<BuildOutcome> {
       ].join("\n\n");
       continue;
     }
-    const done = { ...published, ci };
+    const demo = await recordDemo(
+      dir,
+      {
+        issueNumber,
+        task: reviewTask,
+        diff: await diffSince(dir, testCommit),
+        pullRequestUrl,
+      },
+      progress,
+    );
+    costUsd += demo.costUsd;
+    const done = { ...published, ci, demo, costUsd };
     await request.publish(branch, pullRequestBody(issueNumber, spec, done));
     return { ...at, ...done, costUsd, ok: true, pullRequestUrl };
   }

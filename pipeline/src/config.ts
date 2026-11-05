@@ -20,6 +20,7 @@ export const REPO_DIR = path.resolve(
 );
 
 export const PROMPTS_DIR = path.join(here, "..", "prompts");
+export const PIPELINE_DIR = path.join(here, "..");
 
 /** Model alias or full name passed to `claude --model`. */
 export const PO_MODEL = process.env.PO_MODEL ?? "opus";
@@ -45,6 +46,12 @@ export const BUILD_TIMEOUT_MS = Number(
 export const DOCS_MODEL = process.env.DOCS_MODEL ?? "sonnet";
 export const DOCS_TIMEOUT_MS = Number(
   process.env.DOCS_TIMEOUT_MS ?? 15 * 60_000,
+);
+
+/** Model and time limit for the demo agent that records each build. */
+export const DEMO_MODEL = process.env.DEMO_MODEL ?? "sonnet";
+export const DEMO_TIMEOUT_MS = Number(
+  process.env.DEMO_TIMEOUT_MS ?? 15 * 60_000,
 );
 
 /** Model and time limit for the reviewer agent that checks each build's diff. */
