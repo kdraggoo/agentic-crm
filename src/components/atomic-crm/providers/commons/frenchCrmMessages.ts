@@ -488,6 +488,8 @@ export const frenchCrmMessages = {
       latest_notes_added_ago: "ajouté %{timeAgo}",
       sales_funnel: "Entonnoir des ventes",
       sales_funnel_empty: "Aucune affaire active",
+      view_deals_for_month: "Voir les affaires pour %{month}",
+      view_deals_in_stage: "Voir les affaires en %{stage}",
       stepper: {
         install: "Installer Atomic CRM",
         progress: "%{step}/3 terminé",

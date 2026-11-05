@@ -1,6 +1,7 @@
 import { Filter } from "lucide-react";
 import { useGetList, useTranslate } from "ra-core";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
+import { useNavigate } from "react-router";
 
 import { Card } from "@/components/ui/card";
 
@@ -51,6 +52,8 @@ interface SalesFunnelRowViewProps {
   max: number;
   currency: string;
   locale: string;
+  onClick: (stageValue: string) => void;
+  ariaLabel: string;
 }
 
 const SalesFunnelRowView = ({
@@ -58,9 +61,23 @@ const SalesFunnelRowView = ({
   max,
   currency,
   locale,
+  onClick,
+  ariaLabel,
 }: SalesFunnelRowViewProps) => {
   return (
-    <li className="flex flex-col gap-1">
+    <li
+      className="flex flex-col gap-1 cursor-pointer"
+      role="button"
+      tabIndex={0}
+      aria-label={ariaLabel}
+      onClick={() => onClick(row.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick(row.value);
+        }
+      }}
+    >
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-medium">{row.label}</span>
         <span className="flex items-baseline gap-3 text-xs text-muted-foreground">
@@ -75,6 +92,7 @@ const SalesFunnelRowView = ({
 
 export const SalesFunnel = () => {
   const translate = useTranslate();
+  const navigate = useNavigate();
   const { dealStages, dealPipelineStatuses, currency } =
     useConfigurationContext();
 
@@ -94,6 +112,13 @@ export const SalesFunnel = () => {
   );
 
   const max = useMemo(() => maxFunnelCount(rows), [rows]);
+
+  const handleStageClick = useCallback(
+    (stageValue: string) => {
+      navigate(`/deals?scrollToStage=${encodeURIComponent(stageValue)}`);
+    },
+    [navigate],
+  );
 
   if (isPending) {
     return null;
@@ -125,6 +150,10 @@ export const SalesFunnel = () => {
                 max={max}
                 currency={currency}
                 locale={locale}
+                onClick={handleStageClick}
+                ariaLabel={translate("crm.dashboard.view_deals_in_stage", {
+                  stage: row.label,
+                })}
               />
             ))}
           </ul>

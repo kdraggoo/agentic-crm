@@ -764,6 +764,10 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/dashboard/dealsChartDrilldown.ts",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/dashboard/Welcome.tsx",
           "type": "registry:component"
         },
@@ -773,6 +777,10 @@
         },
         {
           "path": "src/components/atomic-crm/dashboard/SalesFunnel.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/dashboard/MonthOverlayLayer.tsx",
           "type": "registry:component"
         },
         {
