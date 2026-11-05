@@ -30,6 +30,7 @@ import { isClosable, isDueToClose } from "./closing.js";
 import { formatDispute } from "./build/agents.js";
 import { formatCheckResults } from "./build/checks.js";
 import { formatCiResult } from "./build/ci.js";
+import type { DemoResult } from "./build/demo.js";
 import { removeWorktree } from "./build/git.js";
 import { buildIdea, type BuildRequest } from "./build/orchestrator.js";
 import { createFixFlow } from "./fix/discord.js";
@@ -442,6 +443,7 @@ function startBuild(
       if (outcome.ok === true) idea.builtTurn = specTurn;
       const summary = await reportOutcome(idea, outcome);
       for (const chunk of chunkForDiscord(summary)) await thread.send(chunk);
+      if (outcome.ok === true) await sendDemoVideo(thread, outcome.demo);
       await store.save(idea, summary);
       await applyStatusTag(thread, idea.status);
       console.log(`#${idea.issueNumber} → ${idea.status}`);
@@ -452,6 +454,26 @@ function startBuild(
       await reportError(thread, error);
     }
   });
+}
+
+/** Attaches the build's video to its thread. A failed upload never fails the build. */
+async function sendDemoVideo(
+  thread: AnyThreadChannel,
+  demo: DemoResult | undefined,
+): Promise<void> {
+  if (!demo?.videoFile) return;
+  await thread
+    .send({
+      content: `🎬 ${demo.summary}`.slice(0, 2000),
+      files: [demo.videoFile],
+    })
+    .catch(async (error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Demo video for ${thread.id} failed: ${message}`);
+      if (demo.videoUrl) {
+        await thread.send(`🎬 ${demo.videoUrl}`).catch(() => undefined);
+      }
+    });
 }
 
 /** Sets the idea's status from a build outcome and returns the message for the thread. */
@@ -474,6 +496,20 @@ async function reportOutcome(
       "",
       formatCheckResults(outcome.checks),
       ...(outcome.ci ? [formatCiResult(outcome.ci)] : []),
+      ...(outcome.demo && outcome.demo.concerns.length > 0
+        ? [
+            "",
+            "Noticed while filming the demo:",
+            ...outcome.demo.concerns.map((concern) => `- ${concern}`),
+          ]
+        : []),
+      ...(outcome.demo && outcome.demo.gaps.length > 0
+        ? [
+            "",
+            "Problems recording the demo:",
+            ...outcome.demo.gaps.map((gap) => `- ${gap}`),
+          ]
+        : []),
       ...(outcome.review.findings.length > 0
         ? [
             "",

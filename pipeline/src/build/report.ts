@@ -2,6 +2,7 @@ import type { Spec } from "../po/schema.js";
 import type { BuildReport, TestReport } from "./agents.js";
 import { formatCheckResults, type CheckReport } from "./checks.js";
 import { formatCiResult, type CiResult } from "./ci.js";
+import type { DemoResult } from "./demo.js";
 import type { DocsResult } from "./docs.js";
 import type { Review } from "./reviewer.js";
 
@@ -14,6 +15,8 @@ export interface PublishedBuild {
   review: Review;
   /** Unset while GitHub CI is still running. */
   ci?: CiResult;
+  /** Recorded once GitHub CI passes. */
+  demo?: DemoResult;
   attempts: number;
   costUsd: number;
 }
@@ -57,6 +60,23 @@ export function pullRequestBody(
     "## Summary",
     buildReport.summary,
     "",
+    ...(build.demo
+      ? [
+          "## Demo video",
+          build.demo.videoUrl
+            ? `[Watch the walkthrough](${build.demo.videoUrl})`
+            : "Not published here; any video is attached in the Discord thread.",
+          "",
+          build.demo.summary,
+          ...(build.demo.concerns.length > 0
+            ? ["", "Noticed while filming:", list(build.demo.concerns)]
+            : []),
+          ...(build.demo.gaps.length > 0
+            ? ["", "Problems recording it:", list(build.demo.gaps)]
+            : []),
+          "",
+        ]
+      : []),
     "## Acceptance criteria → tests",
     `Locked test file: \`${testReport.test_file}\``,
     "",

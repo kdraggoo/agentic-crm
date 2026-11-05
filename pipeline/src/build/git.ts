@@ -62,6 +62,9 @@ export async function removeWorktree(
   await rm(path.join(WORKTREES_DIR, `idea-${issueNumber}.test-report.json`), {
     force: true,
   });
+  await rm(path.join(WORKTREES_DIR, `idea-${issueNumber}.demo.mp4`), {
+    force: true,
+  });
 }
 
 /**
